@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Mountain Route</name>
+    <trkseg>
+      <trkpt lat="35.00000" lon="135.00000"><ele>100</ele></trkpt>
+      <trkpt lat="35.00009" lon="135.00000"><ele>101</ele></trkpt>
+      <trkpt lat="35.00018" lon="135.00000"><ele>102</ele></trkpt>
+      <trkpt lat="35.00027" lon="135.00000"><ele>103</ele></trkpt>
+      <trkpt lat="35.00036" lon="135.00000"><ele>104</ele></trkpt>
+      <trkpt lat="35.00045" lon="135.00000"><ele>105</ele></trkpt>
+      <trkpt lat="35.00054" lon="135.00000"><ele>106</ele></trkpt>
+      <trkpt lat="35.00063" lon="135.00000"><ele>107</ele></trkpt>
+      <trkpt lat="35.00072" lon="135.00000"><ele>108</ele></trkpt>
+      <trkpt lat="35.00081" lon="135.00000"><ele>109</ele></trkpt>
+      <trkpt lat="35.00090" lon="135.00000"><ele>110</ele></trkpt>
+      <trkpt lat="35.00099" lon="135.00000"><ele>111</ele></trkpt>
+      <trkpt lat="35.00108" lon="135.00000"><ele>112</ele></trkpt>
+      <trkpt lat="35.00117" lon="135.00000"><ele>113</ele></trkpt>
+      <trkpt lat="35.00126" lon="135.00000"><ele>114</ele></trkpt>
+      <trkpt lat="35.00135" lon="135.00000"><ele>115</ele></trkpt>
+      <trkpt lat="35.00144" lon="135.00000"><ele>116</ele></trkpt>
+      <trkpt lat="35.00153" lon="135.00000"><ele>117</ele></trkpt>
+      <trkpt lat="35.00162" lon="135.00000"><ele>118</ele></trkpt>
+      <trkpt lat="35.00171" lon="135.00000"><ele>119</ele></trkpt>
+      <trkpt lat="35.00180" lon="135.00000"><ele>120</ele></trkpt>
+      <trkpt lat="35.00189" lon="135.00000"><ele>121</ele></trkpt>
+      <trkpt lat="35.00198" lon="135.00000"><ele>122</ele></trkpt>
+      <trkpt lat="35.00207" lon="135.00000"><ele>123</ele></trkpt>
+      <trkpt lat="35.00216" lon="135.00000"><ele>124</ele></trkpt>
+      <trkpt lat="35.00225" lon="135.00000"><ele>125</ele></trkpt>
+      <trkpt lat="35.00234" lon="135.00000"><ele>126</ele></trkpt>
+      <trkpt lat="35.00243" lon="135.00000"><ele>127</ele></trkpt>
+      <trkpt lat="35.00252" lon="135.00000"><ele>128</ele></trkpt>
+      <trkpt lat="35.00261" lon="135.00000"><ele>129</ele></trkpt>
+      <trkpt lat="35.00270" lon="135.00000"><ele>130</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -1,0 +1,18 @@
+{
+  "name": "Virtual Cycling",
+  "short_name": "VCycl",
+  "description": "GPXルートを走るバーチャル室内サイクリングPWA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#0f3460",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

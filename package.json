@@ -1,0 +1,23 @@
+{
+  "name": "gpx-vcycl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:ipad": "vite --mode https",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "idb": "^8.0.0",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^1.1.0",
+    "jsdom": "^29.1.1",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
