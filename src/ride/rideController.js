@@ -2,41 +2,92 @@ import { RideSimulator } from '../domain/simulator.js'
 import { calcTorque }    from '../domain/torque.js'
 import { MovingAverage } from '../utils/smoothing.js'
 
-const TICK_MS = 100  // 10 Hz
+const TICK_MS            = 100   // 10 Hz
+const SAMPLE_INTERVAL_MS = 1000  // 1 Hz recording
+const AIR_DENSITY_KG_M3  = 1.225
 
 export class RideController {
   #simulator
+  #route
   #mapView
   #hudView
   #getLiveData
   #powerAvg
   #cadenceAvg
   #intervalId = null
-  #paused = false
+  #paused     = false
+
+  // Route metadata (for recording)
+  #routeId   = null
+  #routeName = ''
+
+  // Recording
+  #startedAt     = null
+  #samples       = []
+  #lastSampleAt  = 0
+
+  // Trainer control
+  #ftmsClient               = null
+  #gradientUpdateIntervalMs
+  #lastGradientSentAt       = 0
+  #lastSentGradient         = null
+  #simulationParams         = null
+
+  // Callbacks
+  #onFinished = null
 
   /**
    * @param {{
-   *   route: import('../domain/route.js').Route,
-   *   params: { massKg: number, cdA: number, crr: number },
-   *   mapView: import('../ui/map.js').MapView,
-   *   hudView: import('../ui/hud.js').HUDView,
-   *   getLiveData: () => { powerW: number, cadenceRpm: number, heartRateBpm: number },
-   *   smoothingWindowSec?: number,
+   *   route:                    import('../domain/route.js').Route,
+   *   routeId?:                 number,
+   *   routeName?:               string,
+   *   params:                   { massKg: number, cdA: number, crr: number },
+   *   mapView:                  import('../ui/map.js').MapView,
+   *   hudView:                  import('../ui/hud.js').HUDView,
+   *   getLiveData:              () => { powerW: number, cadenceRpm: number, heartRateBpm: number },
+   *   ftmsClient?:              { isControllable: boolean, setSimulationParameters: fn, reset: fn },
+   *   onFinished?:              (summary: object|null) => void,
+   *   smoothingWindowSec?:      number,
+   *   gradientUpdateIntervalMs?: number,
    * }} options
    */
-  constructor({ route, params, mapView, hudView, getLiveData, smoothingWindowSec = 3 }) {
-    this.#simulator   = new RideSimulator(route, params)
-    this.#mapView     = mapView
-    this.#hudView     = hudView
+  constructor({
+    route, routeId = null, routeName = '',
+    params, mapView, hudView, getLiveData,
+    ftmsClient               = null,
+    onFinished               = null,
+    smoothingWindowSec       = 3,
+    gradientUpdateIntervalMs = 1000,
+  }) {
+    this.#simulator              = new RideSimulator(route, params)
+    this.#route                  = route
+    this.#mapView                = mapView
+    this.#hudView                = hudView
     this.#hudView.setRoute(route)
-    this.#getLiveData = getLiveData
-    this.#powerAvg    = new MovingAverage(smoothingWindowSec)
-    this.#cadenceAvg  = new MovingAverage(smoothingWindowSec)
+    this.#getLiveData            = getLiveData
+    this.#powerAvg               = new MovingAverage(smoothingWindowSec)
+    this.#cadenceAvg             = new MovingAverage(smoothingWindowSec)
+    this.#routeId                = routeId
+    this.#routeName              = routeName
+    this.#ftmsClient             = ftmsClient
+    this.#onFinished             = onFinished
+    this.#gradientUpdateIntervalMs = gradientUpdateIntervalMs
+
+    if (ftmsClient) {
+      // windResistanceCoef [kg/m] = ρ/2 * CdA
+      this.#simulationParams = {
+        crr:                params.crr,
+        windResistanceCoef: 0.5 * AIR_DENSITY_KG_M3 * params.cdA,
+      }
+    }
   }
 
   start() {
     if (this.#intervalId) return
-    this.#paused = false
+    this.#paused       = false
+    this.#startedAt    = new Date()
+    this.#samples      = []
+    this.#lastSampleAt = 0
     this.#simulator.resume()
     this.#intervalId = setInterval(() => this.#tick(), TICK_MS)
   }
@@ -51,11 +102,34 @@ export class RideController {
     this.#simulator.resume()
   }
 
+  /**
+   * ライドを停止してサマリーを返す。
+   * 既に停止済みの場合は null を返す。
+   * @returns {{ routeId, routeName, startedAt, endedAt, samples } | null}
+   */
   stop() {
+    if (!this.#startedAt) return null
+
     clearInterval(this.#intervalId)
     this.#intervalId = null
     this.#simulator.reset()
     this.#paused = false
+
+    if (this.#ftmsClient?.isControllable) {
+      this.#ftmsClient.reset().catch((err) => console.warn('FTMS reset failed:', err))
+    }
+
+    const summary = this.#samples.length >= 2 ? {
+      routeId:   this.#routeId,
+      routeName: this.#routeName,
+      startedAt: this.#startedAt,
+      endedAt:   new Date(),
+      samples:   this.#samples,
+    } : null
+
+    this.#startedAt = null
+    this.#samples   = []
+    return summary
   }
 
   get isRunning() { return this.#intervalId !== null }
@@ -78,20 +152,63 @@ export class RideController {
     this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg)
     this.#mapView.setProgress(state.distanceM)
     this.#hudView.update({
-      velocityMs:           state.velocityMs,
-      distanceM:            state.distanceM,
-      elapsedSec:           state.elapsedSec,
-      elevationGainM:       state.elevationGainM,
-      powerW:               smoothPowerW,
-      cadenceRpm:           smoothCadence,
+      velocityMs:      state.velocityMs,
+      distanceM:       state.distanceM,
+      elapsedSec:      state.elapsedSec,
+      elevationGainM:  state.elevationGainM,
+      powerW:          smoothPowerW,
+      cadenceRpm:      smoothCadence,
       torqueNm,
       heartRateBpm,
-      gradientPercent:      state.currentGradientPercent,
+      gradientPercent: state.currentGradientPercent,
     })
 
+    // 1Hz サンプリング
+    if (now - this.#lastSampleAt >= SAMPLE_INTERVAL_MS) {
+      this.#samples.push({
+        timestampMs:    now,
+        lat:            state.currentLat,
+        lon:            state.currentLon,
+        elevationM:     this.#route.getElevationAt(state.distanceM),
+        distanceM:      state.distanceM,
+        velocityMs:     state.velocityMs,
+        gradientPercent: state.currentGradientPercent,
+        powerW:          smoothPowerW,
+        cadenceRpm:      smoothCadence,
+        heartRateBpm,
+      })
+      this.#lastSampleAt = now
+    }
+
+    // 勾配をトレーナーへ送信（1秒ごと、または±1%急変時は即送信）
+    if (this.#ftmsClient?.isControllable) {
+      const gradient  = state.currentGradientPercent
+      const elapsed   = now - this.#lastGradientSentAt
+      const bigChange = Math.abs(gradient - (this.#lastSentGradient ?? Infinity)) >= 1.0
+      if (elapsed >= this.#gradientUpdateIntervalMs || bigChange) {
+        this.#sendGradient(gradient)
+        this.#lastGradientSentAt = now
+        this.#lastSentGradient   = gradient
+      }
+    }
+
     if (this.#simulator.isFinished) {
-      this.stop()
       this.#hudView.showFinished()
+      const summary = this.stop()
+      this.#onFinished?.(summary)
+    }
+  }
+
+  async #sendGradient(gradientPercent) {
+    try {
+      await this.#ftmsClient.setSimulationParameters({
+        windSpeedMs:        0,
+        gradientPercent,
+        crr:                this.#simulationParams.crr,
+        windResistanceCoef: this.#simulationParams.windResistanceCoef,
+      })
+    } catch (err) {
+      console.error('Gradient send failed:', err)
     }
   }
 }

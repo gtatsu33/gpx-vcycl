@@ -91,6 +91,7 @@ async function renderList(mapView, listEl, profileSvg, onRouteSelected) {
     `
 
     item.querySelector('.route-info').addEventListener('click', () => selectRoute(r, mapView, listEl, profileSvg, onRouteSelected))
+
     item.querySelector('.route-delete-btn').addEventListener('click', async (e) => {
       e.stopPropagation()
       if (!confirm(`「${r.name}」を削除しますか？`)) return
@@ -109,7 +110,7 @@ function selectRoute(record, mapView, listEl, profileSvg, onRouteSelected) {
   const route = Route.fromGpx(record.gpxText)
   mapView.setRoute(route)
   renderProfile(route, profileSvg)
-  onRouteSelected?.(route)
+  onRouteSelected?.({ route, id: record.id, name: record.name })
 }
 
 function renderProfile(route, svgEl) {

@@ -7,6 +7,7 @@ export class MockFtmsClient {
   async connect() {
     await new Promise((resolve) => setTimeout(resolve, 300))
     this.#t = 0
+    console.log('[MockFTMS] requestControl → SUCCESS')
     this.#intervalId = setInterval(() => {
       this.#t += 0.1
       this.#onDataCallback?.({
@@ -28,6 +29,20 @@ export class MockFtmsClient {
 
   onIndoorBikeData(callback)        { this.#onDataCallback  = callback }
   onConnectionStateChange(callback) { this.#onStateCallback = callback }
+  onControlLog(callback)            { /* mock: logs go to console only */ }
 
-  get isConnected() { return this.#intervalId !== null }
+  get isConnected()    { return this.#intervalId !== null }
+  get isControllable() { return this.isConnected }
+
+  async requestControl() {
+    console.log('[MockFTMS] requestControl → SUCCESS')
+  }
+
+  async setSimulationParameters({ windSpeedMs = 0, gradientPercent, crr, windResistanceCoef }) {
+    console.log(`[MockFTMS] setSimulationParameters grad=${gradientPercent.toFixed(1)}% wind=${windSpeedMs} crr=${crr} cwa=${windResistanceCoef}`)
+  }
+
+  async reset() {
+    console.log('[MockFTMS] reset → SUCCESS')
+  }
 }

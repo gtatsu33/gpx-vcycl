@@ -87,6 +87,7 @@ export async function initDeviceManager() {
   }
 
   // --- Trainer (FTMS) ---
+  ftms.onControlLog((msg) => appendLog(`Trainer制御: ${msg}`))
   wireCard(ftms, 'trainer-card', 'Trainer')
   ftms.onIndoorBikeData(({ speedKmh, cadenceRpm, powerW }) => {
     if (speedKmh   != null) setText('trainer-speed',   speedKmh.toFixed(1))
@@ -136,7 +137,7 @@ export async function initDeviceManager() {
   }
   updateActivePower()
 
-  return { getLiveData: () => ({ ...live }) }
+  return { getLiveData: () => ({ ...live }), ftmsClient: ftms }
 }
 
 function setText(id, value) {

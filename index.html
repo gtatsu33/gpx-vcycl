@@ -236,6 +236,29 @@
       background: #0d0d1a; border-top: 1px solid #0f3460;
     }
     #ride-controls button { flex: 1; max-width: 200px; }
+    .btn-warning { border-color: #ff6348 !important; color: #ff6348 !important; }
+
+    /* Ride history */
+    .ride-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: #16213e; border: 1px solid #0f3460;
+      border-radius: 7px; padding: 0.5rem 0.75rem; flex-shrink: 0;
+    }
+    .ride-info { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
+    .ride-name { font-size: 0.85rem; font-weight: 600; }
+    .ride-meta { font-size: 0.7rem; color: #888; }
+    .ride-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+    .small-btn { padding: 0.25rem 0.6rem; font-size: 0.7rem; }
+    .strava-link { color: #FC4C02; font-size: 0.7rem; text-decoration: none; margin-left: 0.4rem; }
+    .status-badge.uploaded { background: #0d2e0d; color: #4caf50; }
+    .status-badge.pending  { background: #222; color: #888; }
+    .status-badge.failed   { background: #2e0d0d; color: #f44336; }
+
+    /* Ride end modal */
+    .summary-grid { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.5rem; }
+    .summary-row  { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 0.2rem 0; border-bottom: 1px solid #1a1a30; }
+    .ride-end-status       { font-size: 0.8rem; color: #888; min-height: 1.2em; }
+    .ride-end-status.error { color: #f44336; }
 
     /* Portrait fallback */
     @media (orientation: portrait) {
@@ -297,6 +320,7 @@
   <div id="tab-bar">
     <button class="tab-btn active" data-tab="device">デバイス</button>
     <button class="tab-btn" data-tab="route">ルート</button>
+    <button class="tab-btn" data-tab="history">履歴</button>
   </div>
 
   <!-- ── Device tab ── -->
@@ -458,9 +482,17 @@
     <div id="ride-controls" hidden>
       <button id="pause-resume-btn">⏸ 一時停止</button>
       <button id="stop-ride-btn">⏹ 終了</button>
+      <button id="reset-trainer-btn" class="btn-warning">⚠ Reset Trainer</button>
     </div>
 
   </div><!-- #tab-route -->
+
+  <!-- ── History tab ── -->
+  <div id="tab-history" class="tab-content">
+    <div style="padding: 0.75rem; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:0.5rem;">
+      <div id="ride-history-list"></div>
+    </div>
+  </div>
 
   <!-- Settings modal -->
   <div id="modal-overlay" class="modal-overlay">
@@ -513,7 +545,40 @@
         </div>
       </div>
 
+      <div class="settings-group">
+        <p class="settings-label">トレーナー負荷制御 (FTMS)</p>
+        <label class="radio-label">
+          <input type="checkbox" id="trainer-control-toggle"> 勾配に応じた負荷制御を有効化
+        </label>
+        <p style="font-size:0.7rem;color:#666;margin-top:0.2rem;">要FTMS接続。OFFの場合は勾配送信しない（デフォルト）</p>
+      </div>
+
+      <div class="settings-group">
+        <p class="settings-label">Strava連携</p>
+        <p id="strava-status" style="font-size:0.8rem;color:#888;">確認中...</p>
+        <button id="strava-connect-btn">Stravaに接続</button>
+        <button id="strava-disconnect-btn" hidden>Strava接続を解除</button>
+      </div>
+
       <button id="modal-close">閉じる</button>
+    </div>
+  </div>
+
+  <!-- Ride end modal -->
+  <div id="ride-end-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>ライド終了</h2>
+      <div id="ride-end-summary" class="summary-grid"></div>
+      <div class="settings-group">
+        <p class="settings-label">ライド名</p>
+        <input type="text" id="ride-end-name" placeholder="Indoor Ride" />
+      </div>
+      <p id="ride-end-status" class="ride-end-status"></p>
+      <div class="modal-buttons" style="flex-direction:column; gap:0.5rem;">
+        <button id="ride-end-upload-btn">Stravaにアップロード</button>
+        <button id="ride-end-save-btn">保存のみ（後でアップロード）</button>
+        <button id="ride-end-discard-btn" style="background:transparent;border-color:#555;color:#888;">破棄</button>
+      </div>
     </div>
   </div>
 

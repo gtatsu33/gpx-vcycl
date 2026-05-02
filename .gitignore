@@ -1,20 +1,17 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
+# Dependencies
+node_modules/
 
-# Virtual environment
-.venv/
+# Build output
+dist/
 
-# Streamlit / local data
+# Local env / secrets
+.env
+*.local
+certs/
 
 # Editor files
 .vscode/
 
 # Claude
 .claude/
-
-certs/
-.env
 

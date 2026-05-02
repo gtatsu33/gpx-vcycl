@@ -47,3 +47,27 @@ export const CPM_FLAG = {
 // Heart Rate Service
 export const HRS_SERVICE_UUID = 0x180D
 export const HEART_RATE_MEASUREMENT_UUID = 0x2A37
+
+// FTMS Control Point characteristic
+export const FITNESS_MACHINE_CONTROL_POINT_UUID = 0x2AD9
+
+// FTMS Control Point op codes
+export const FTMS_OPCODE = {
+  REQUEST_CONTROL:                   0x00,
+  RESET:                             0x01,
+  SET_TARGET_RESISTANCE_LEVEL:       0x04,
+  SET_TARGET_POWER:                  0x05,  // Reserved for ERG mode
+  START_OR_RESUME:                   0x07,
+  STOP_OR_PAUSE:                     0x08,
+  SET_INDOOR_BIKE_SIMULATION_PARAMS: 0x11,
+  RESPONSE_CODE:                     0x80,
+}
+
+// Response result codes
+export const FTMS_RESULT = {
+  SUCCESS:               0x01,
+  OP_CODE_NOT_SUPPORTED: 0x02,
+  INVALID_PARAMETER:     0x03,
+  OPERATION_FAILED:      0x04,
+  CONTROL_NOT_PERMITTED: 0x05,
+}
