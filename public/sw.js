@@ -1,5 +1,14 @@
 const CACHE_NAME = 'vcycl-v1'
-const PRECACHE_URLS = ['/', '/manifest.json']
+const PRECACHE_URLS = [
+  '/',
+  '/manifest.json',
+  '/favicon.ico',
+  '/favicon.png',
+  '/apple-touch-icon.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/apple-touch-icon.png',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
