@@ -103,73 +103,6 @@ export function buildFit(summary) {
   w.u16(0)               // product
   w.u32(startTs)         // time_created
 
-  // ── Activity ──────────────────────────────────────────────────────────────
-  writeDef(w, LOCAL.ACTIVITY, GMSG.ACTIVITY, [
-    [253, 4, B.UINT32], // timestamp
-    [0,   4, B.UINT32], // total_timer_time (scale 1000)
-    [1,   2, B.UINT16], // num_sessions
-    [2,   1, B.ENUM],   // type
-    [3,   1, B.ENUM],   // event
-    [4,   1, B.ENUM],   // event_type
-  ])
-  w.u8(LOCAL.ACTIVITY)
-  w.u32(endTs)
-  w.u32(Math.round(elapsedMs))   // milliseconds
-  w.u16(1)                       // 1 session
-  w.u8(0)                        // type: manual
-  w.u8(26)                       // event: activity
-  w.u8(1)                        // event_type: stop
-
-  // ── Session ───────────────────────────────────────────────────────────────
-  writeDef(w, LOCAL.SESSION, GMSG.SESSION, [
-    [253, 4, B.UINT32], // timestamp
-    [0,   1, B.ENUM],   // event
-    [1,   1, B.ENUM],   // event_type
-    [2,   4, B.UINT32], // start_time
-    [5,   1, B.ENUM],   // sport
-    [6,   1, B.ENUM],   // sub_sport
-    [7,   4, B.UINT32], // total_elapsed_time (scale 1000)
-    [9,   4, B.UINT32], // total_distance (scale 100)
-    [14,  2, B.UINT16], // avg_speed (scale 1000)
-    [17,  1, B.UINT8],  // avg_heart_rate
-    [19,  1, B.UINT8],  // avg_cadence
-    [20,  2, B.UINT16], // avg_power
-    [22,  2, B.UINT16], // total_ascent
-  ])
-  w.u8(LOCAL.SESSION)
-  w.u32(endTs)
-  w.u8(9)                              // event: session
-  w.u8(1)                              // event_type: stop
-  w.u32(startTs)
-  w.u8(2)                              // sport: cycling
-  w.u8(6)                              // sub_sport: virtual_activity
-  w.u32(Math.round(elapsedMs))
-  w.u32(Math.round(totalDistM * 100))
-  w.u16(Math.round(avgSpeedMs * 1000))
-  w.u8(avgHR)
-  w.u8(avgCadence)
-  w.u16(avgPowerW)
-  w.u16(Math.round(totalAscentM))
-
-  // ── Lap ───────────────────────────────────────────────────────────────────
-  writeDef(w, LOCAL.LAP, GMSG.LAP, [
-    [253, 4, B.UINT32], // timestamp
-    [0,   1, B.ENUM],   // event
-    [1,   1, B.ENUM],   // event_type
-    [2,   4, B.UINT32], // start_time
-    [7,   4, B.UINT32], // total_elapsed_time (scale 1000)
-    [9,   4, B.UINT32], // total_distance (scale 100)
-    [25,  2, B.UINT16], // message_index
-  ])
-  w.u8(LOCAL.LAP)
-  w.u32(endTs)
-  w.u8(9)                              // event: lap
-  w.u8(1)                              // event_type: stop
-  w.u32(startTs)
-  w.u32(Math.round(elapsedMs))
-  w.u32(Math.round(totalDistM * 100))
-  w.u16(0)
-
   // ── Records ───────────────────────────────────────────────────────────────
   if (samples.length > 0) {
     writeDef(w, LOCAL.RECORD, GMSG.RECORD, [
@@ -197,6 +130,73 @@ export function buildFit(summary) {
       w.u8(Math.max(0, Math.round(s.cadenceRpm)))
     }
   }
+
+  // ── Lap ───────────────────────────────────────────────────────────────────
+  writeDef(w, LOCAL.LAP, GMSG.LAP, [
+    [253, 4, B.UINT32], // timestamp
+    [0,   1, B.ENUM],   // event
+    [1,   1, B.ENUM],   // event_type
+    [2,   4, B.UINT32], // start_time
+    [7,   4, B.UINT32], // total_elapsed_time (scale 1000)
+    [9,   4, B.UINT32], // total_distance (scale 100)
+    [25,  2, B.UINT16], // message_index
+  ])
+  w.u8(LOCAL.LAP)
+  w.u32(endTs)
+  w.u8(9)                              // event: lap
+  w.u8(1)                              // event_type: stop
+  w.u32(startTs)
+  w.u32(Math.round(elapsedMs))
+  w.u32(Math.round(totalDistM * 100))
+  w.u16(0)
+
+  // ── Session ───────────────────────────────────────────────────────────────
+  writeDef(w, LOCAL.SESSION, GMSG.SESSION, [
+    [253, 4, B.UINT32], // timestamp
+    [0,   1, B.ENUM],   // event
+    [1,   1, B.ENUM],   // event_type
+    [2,   4, B.UINT32], // start_time
+    [5,   1, B.ENUM],   // sport
+    [6,   1, B.ENUM],   // sub_sport
+    [7,   4, B.UINT32], // total_elapsed_time (scale 1000)
+    [9,   4, B.UINT32], // total_distance (scale 100)
+    [14,  2, B.UINT16], // avg_speed (scale 1000)
+    [17,  1, B.UINT8],  // avg_heart_rate
+    [19,  1, B.UINT8],  // avg_cadence
+    [20,  2, B.UINT16], // avg_power
+    [22,  2, B.UINT16], // total_ascent
+  ])
+  w.u8(LOCAL.SESSION)
+  w.u32(endTs)
+  w.u8(9)                              // event: session
+  w.u8(1)                              // event_type: stop
+  w.u32(startTs)
+  w.u8(2)                              // sport: cycling
+  w.u8(58)                             // sub_sport: virtual_activity
+  w.u32(Math.round(elapsedMs))
+  w.u32(Math.round(totalDistM * 100))
+  w.u16(Math.round(avgSpeedMs * 1000))
+  w.u8(avgHR)
+  w.u8(avgCadence)
+  w.u16(avgPowerW)
+  w.u16(Math.round(totalAscentM))
+
+  // ── Activity ──────────────────────────────────────────────────────────────
+  writeDef(w, LOCAL.ACTIVITY, GMSG.ACTIVITY, [
+    [253, 4, B.UINT32], // timestamp
+    [0,   4, B.UINT32], // total_timer_time (scale 1000)
+    [1,   2, B.UINT16], // num_sessions
+    [2,   1, B.ENUM],   // type
+    [3,   1, B.ENUM],   // event
+    [4,   1, B.ENUM],   // event_type
+  ])
+  w.u8(LOCAL.ACTIVITY)
+  w.u32(endTs)
+  w.u32(Math.round(elapsedMs))   // milliseconds
+  w.u16(1)                       // 1 session
+  w.u8(0)                        // type: manual
+  w.u8(26)                       // event: activity
+  w.u8(1)                        // event_type: stop
 
   // ── Assemble with header + CRC ────────────────────────────────────────────
   const data    = w.bytes

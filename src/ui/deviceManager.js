@@ -51,7 +51,7 @@ export async function initDeviceManager() {
     })
   })
 
-  function wireCard(client, cardId, deviceName) {
+  function wireCard(client, cardId, deviceName, dbKey) {
     const card          = document.getElementById(cardId)
     const statusEl      = card.querySelector('.status-badge')
     const connectBtn    = card.querySelector('.connect-btn')
@@ -66,6 +66,10 @@ export async function initDeviceManager() {
 
     client.onConnectionStateChange((state) => {
       setStatus(state)
+      if (state === 'connected' && client.device?.name) {
+        db.put('settings', client.device.name, dbKey).catch(() => {})
+        connectBtn.title = client.device.name
+      }
       if (state === 'disconnected') {
         card.querySelectorAll('.metric-value').forEach((el) => { el.textContent = '--' })
       }
@@ -74,9 +78,11 @@ export async function initDeviceManager() {
 
     connectBtn.addEventListener('click', async () => {
       setStatus('connecting')
-      appendLog(`${deviceName}: 接続を試みています...`)
+      const savedName = await db.get('settings', dbKey)
+      if (savedName) appendLog(`${deviceName}: 前回のデバイス「${savedName}」に接続中...`)
+      else           appendLog(`${deviceName}: 接続を試みています...`)
       try {
-        await client.connect()
+        await client.connect(savedName ?? null)
       } catch (err) {
         setStatus('disconnected')
         appendLog(`${deviceName}: エラー: ${err.message}`)
@@ -84,11 +90,16 @@ export async function initDeviceManager() {
     })
 
     disconnectBtn.addEventListener('click', () => client.disconnect())
+
+    // 保存済みデバイス名をボタンのツールチップに反映
+    db.get('settings', dbKey).then((name) => {
+      if (name) connectBtn.title = `前回: ${name}`
+    })
   }
 
   // --- Trainer (FTMS) ---
   ftms.onControlLog((msg) => appendLog(`Trainer制御: ${msg}`))
-  wireCard(ftms, 'trainer-card', 'Trainer')
+  wireCard(ftms, 'trainer-card', 'Trainer', 'lastFtmsDeviceId')
   ftms.onIndoorBikeData(({ speedKmh, cadenceRpm, powerW }) => {
     if (speedKmh   != null) setText('trainer-speed',   speedKmh.toFixed(1))
     if (cadenceRpm != null) setText('trainer-cadence', Math.round(cadenceRpm))
@@ -104,7 +115,7 @@ export async function initDeviceManager() {
   })
 
   // --- Power Meter (CPS) ---
-  wireCard(cps, 'power-meter-card', 'Power Meter')
+  wireCard(cps, 'power-meter-card', 'Power Meter', 'lastCpsDeviceId')
   cps.onPowerData(({ powerW, cadenceRpm }) => {
     if (powerW     != null) {
       setText('cps-power', Math.round(powerW))
@@ -119,7 +130,7 @@ export async function initDeviceManager() {
   })
 
   // --- Heart Rate (HRS) ---
-  wireCard(hrs, 'heart-rate-card', 'Heart Rate')
+  wireCard(hrs, 'heart-rate-card', 'Heart Rate', 'lastHrsDeviceId')
   hrs.onHeartRateData(({ heartRateBpm }) => {
     if (heartRateBpm != null) {
       setText('hr-bpm', heartRateBpm)

@@ -1,20 +1,26 @@
-const LOOKAHEAD_M  = 1000
-const SAMPLE_M     = 20
-const SVG_W        = 200
-const SVG_H        = 52
-const PAD_B        = 6    // bottom padding for color strip
-const ELE_RANGE_M  = 100  // fixed vertical scale: SVG height always represents 100 m of elevation
+const LOOKAHEAD_M = 1000
+const SAMPLE_M    = 20
+const SVG_W       = 200   // viewBox width for 1km gradient profile
+const SVG_H       = 52
+const PAD_B       = 14    // bottom padding (room for distance labels)
+
+// Course elevation map viewBox width (unit = 1/1000 of total distance)
+const COURSE_VW   = 1000
+const COURSE_VH   = SVG_H
 
 export class HUDView {
   #route = null
+  #courseTotalM    = 0
+  #courseReady     = false
 
-  /** Call once when a route is selected (before riding starts). */
   setRoute(route) {
-    this.#route = route
+    this.#route       = route
+    this.#courseReady = false
+    // 描画は update() の初回呼び出し時に行う（SVG が visible になってから）
   }
 
   update({
-    velocityMs, distanceM, elapsedSec, elevationGainM,
+    velocityMs, distanceM, totalDistanceM, elapsedSec, elevationGainM,
     powerW, cadenceRpm, torqueNm, heartRateBpm, gradientPercent,
   }) {
     set('hud-speed',    (velocityMs * 3.6).toFixed(1))
@@ -27,7 +33,16 @@ export class HUDView {
     set('hud-hr',       heartRateBpm > 0 ? heartRateBpm.toString() : '--')
     set('hud-gradient', (gradientPercent >= 0 ? '+' : '') + gradientPercent.toFixed(1))
 
-    if (this.#route) this.#renderGradientProfile(distanceM)
+    if (totalDistanceM > 0) {
+      const rem = Math.max(0, totalDistanceM - distanceM)
+      set('hud-remaining', `残り ${(rem / 1000).toFixed(1)} km`)
+    }
+
+    if (this.#route) {
+      if (!this.#courseReady) this.#renderCourseElevation()
+      this.#renderGradientProfile(distanceM)
+      this.#updateCourseMarker(distanceM)
+    }
   }
 
   showFinished() {
@@ -35,74 +50,155 @@ export class HUDView {
     if (el) el.hidden = false
   }
 
+  // ── 1km 勾配プロファイル ───────────────────────────────────────────────
   #renderGradientProfile(currentDistanceM) {
     const svg = document.getElementById('gradient-profile')
-    if (!svg) return
+    if (!svg || !this.#route) return
 
-    const route    = this.#route
-    const endM     = Math.min(currentDistanceM + LOOKAHEAD_M, route.totalDistanceM)
-    const spanM    = endM - currentDistanceM
-    if (spanM <= 0) { svg.innerHTML = ''; return }
+    const route   = this.#route
+    const totalM  = route.totalDistanceM
+    const spanM   = LOOKAHEAD_M          // X軸は常に1000m固定
 
-    // Sample route ahead
+    // ゴール以降を黒く塗る
+    const goalRelX = Math.min((totalM - currentDistanceM) / spanM * SVG_W, SVG_W)
+    const blackRect = goalRelX < SVG_W
+      ? `<rect x="${goalRelX.toFixed(1)}" y="0" width="${(SVG_W - goalRelX).toFixed(1)}" height="${SVG_H}" fill="#000"/>`
+      : ''
+
+    // ゴールまでのサンプルのみ
+    const endM = Math.min(currentDistanceM + LOOKAHEAD_M, totalM)
+    if (endM <= currentDistanceM) { svg.innerHTML = blackRect; return }
+
     const samples = []
     for (let d = currentDistanceM; d <= endM; d += SAMPLE_M) {
       samples.push({ d, elev: route.getElevationAt(d) ?? 0, grad: route.getGradientAt(d) })
     }
-    if (samples.length === 0 || samples[samples.length - 1].d < endM) {
+    if (samples[samples.length - 1].d < endM) {
       samples.push({ d: endM, elev: route.getElevationAt(endM) ?? 0, grad: route.getGradientAt(endM) })
     }
 
     const eleMin = Math.min(...samples.map((s) => s.elev))
+    const ELE_RANGE_M = 100
 
     const toX = (d) => ((d - currentDistanceM) / spanM) * SVG_W
     const toY = (e) => SVG_H - PAD_B - ((e - eleMin) / ELE_RANGE_M) * (SVG_H - PAD_B - 2)
 
-    // Group consecutive same-color samples into one polygon (eliminates gaps at color boundaries)
+    // 色ポリゴン
     const parts = []
     let si = 1
     while (si < samples.length) {
       const col = gradientColor(samples[si].grad)
       let ei = si
       while (ei < samples.length && gradientColor(samples[ei].grad) === col) ei++
-
       const pts = [
-        `${toX(samples[si - 1].d)},${SVG_H}`,
-        `${toX(samples[si - 1].d)},${toY(samples[si - 1].elev)}`,
+        `${toX(samples[si - 1].d).toFixed(1)},${SVG_H}`,
+        `${toX(samples[si - 1].d).toFixed(1)},${toY(samples[si - 1].elev).toFixed(1)}`,
       ]
       for (let k = si; k < ei; k++) {
-        pts.push(`${toX(samples[k].d)},${toY(samples[k].elev)}`)
+        pts.push(`${toX(samples[k].d).toFixed(1)},${toY(samples[k].elev).toFixed(1)}`)
       }
-      pts.push(`${toX(samples[ei - 1].d)},${SVG_H}`)
+      pts.push(`${toX(samples[ei - 1].d).toFixed(1)},${SVG_H}`)
       parts.push(`<polygon points="${pts.join(' ')}" fill="${col}" fill-opacity="0.9" shape-rendering="crispEdges"/>`)
       si = ei
     }
-    const polys = parts.join('')
 
-    // White profile line on top
-    const polyPts = samples.map((s) => `${toX(s.d)},${toY(s.elev)}`).join(' ')
-    const line = `<polyline points="${polyPts}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1"/>`
+    // 白線
+    const polyPts = samples.map((s) => `${toX(s.d).toFixed(1)},${toY(s.elev).toFixed(1)}`).join(' ')
+    const line    = `<polyline points="${polyPts}" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1"/>`
 
-    // Vertical marker at current position (left edge)
-    const marker = `<line x1="1" y1="0" x2="1" y2="${SVG_H}" stroke="#fff" stroke-width="1.5" opacity="0.8"/>`
+    // 現在位置マーカー
+    const marker = `<line x1="1" y1="0" x2="1" y2="${SVG_H - PAD_B}" stroke="#fff" stroke-width="1.5" opacity="0.8"/>`
 
-    // Distance ticks: 500m mark
-    const ticks = spanM >= 500
-      ? `<line x1="${toX(currentDistanceM + 500)}" y1="${SVG_H - 6}" x2="${toX(currentDistanceM + 500)}" y2="${SVG_H}" stroke="#fff" stroke-width="0.8" opacity="0.5"/>`
+    // 距離ラベル（500m・1km）
+    const x500  = toX(currentDistanceM + 500)
+    const lbl500 = x500 <= SVG_W - 2
+      ? `<line x1="${x500.toFixed(1)}" y1="${SVG_H - PAD_B}" x2="${x500.toFixed(1)}" y2="${SVG_H - PAD_B + 4}" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>` +
+        `<text x="${x500.toFixed(1)}" y="${SVG_H - 1}" fill="rgba(255,255,255,0.65)" font-size="6" text-anchor="middle" font-family="system-ui,sans-serif">500m</text>`
+      : ''
+    const x1000 = SVG_W
+    const lbl1km = goalRelX >= SVG_W
+      ? `<line x1="${x1000 - 1}" y1="${SVG_H - PAD_B}" x2="${x1000 - 1}" y2="${SVG_H - PAD_B + 4}" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>` +
+        `<text x="${x1000 - 2}" y="${SVG_H - 1}" fill="rgba(255,255,255,0.65)" font-size="6" text-anchor="end" font-family="system-ui,sans-serif">1km</text>`
       : ''
 
     svg.setAttribute('viewBox', `0 0 ${SVG_W} ${SVG_H}`)
     svg.setAttribute('preserveAspectRatio', 'none')
-    svg.innerHTML = polys + line + marker + ticks
+    svg.innerHTML = blackRect + parts.join('') + line + marker + lbl500 + lbl1km
+  }
+
+  // ── コース全体標高マップ（ルート確定時に一度だけ描画）────────────────────
+  #renderCourseElevation() {
+    const svg = document.getElementById('course-elevation-map')
+    if (!svg || !this.#route) return
+
+    const route  = this.#route
+    const totalM = route.totalDistanceM
+    if (totalM <= 0) return
+
+    this.#courseTotalM = totalM
+
+    // 200点サンプル
+    const STEPS = 200
+    const samples = []
+    for (let i = 0; i <= STEPS; i++) {
+      const d = (i / STEPS) * totalM
+      samples.push({ d, elev: route.getElevationAt(d) ?? 0 })
+    }
+
+    const eleMin  = Math.min(...samples.map((s) => s.elev))
+    const eleMax  = Math.max(...samples.map((s) => s.elev))
+    const eleSpan = eleMax - eleMin || 1
+
+    const toX = (d) => (d / totalM) * COURSE_VW
+    const toY = (e) => COURSE_VH - PAD_B - ((e - eleMin) / eleSpan) * (COURSE_VH - PAD_B - 2)
+
+    // 標高ポリゴン
+    const pts = [
+      `0,${COURSE_VH}`,
+      ...samples.map((s) => `${toX(s.d).toFixed(1)},${toY(s.elev).toFixed(1)}`),
+      `${COURSE_VW},${COURSE_VH}`,
+    ]
+    const poly = `<polygon points="${pts.join(' ')}" fill="#1a4c8a" fill-opacity="0.75"/>`
+    const line = `<polyline points="${samples.map((s) => `${toX(s.d).toFixed(1)},${toY(s.elev).toFixed(1)}`).join(' ')}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>`
+
+    // 10分割の縦線＋距離ラベル
+    const divs = []
+    for (let i = 1; i <= 10; i++) {
+      const d  = (i / 10) * totalM
+      const x  = toX(d)
+      const km = (d / 1000).toFixed(1)
+      divs.push(
+        `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${COURSE_VH - PAD_B}" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/>`,
+        `<line x1="${x.toFixed(1)}" y1="${COURSE_VH - PAD_B}" x2="${x.toFixed(1)}" y2="${COURSE_VH}" stroke="rgba(255,255,255,0.35)" stroke-width="0.8"/>`,
+        `<text x="${x.toFixed(1)}" y="${COURSE_VH - 1}" fill="rgba(255,255,255,0.8)" font-size="12" text-anchor="middle" font-family="system-ui,sans-serif">${km}km</text>`,
+      )
+    }
+
+    // 現在位置マーカー（後で x1/x2 を更新）
+    const posMarker = `<line id="course-pos-line" x1="0" y1="0" x2="0" y2="${COURSE_VH}" stroke="#fff" stroke-width="2" stroke-dasharray="3,2" opacity="0.9"/>`
+
+    svg.setAttribute('viewBox', `0 0 ${COURSE_VW} ${COURSE_VH}`)
+    svg.setAttribute('preserveAspectRatio', 'none')
+    svg.innerHTML = poly + line + divs.join('') + posMarker
+    this.#courseReady = true
+  }
+
+  #updateCourseMarker(distanceM) {
+    if (!this.#courseReady || this.#courseTotalM <= 0) return
+    const marker = document.getElementById('course-pos-line')
+    if (!marker) return
+    const x = (distanceM / this.#courseTotalM * COURSE_VW).toFixed(1)
+    marker.setAttribute('x1', x)
+    marker.setAttribute('x2', x)
   }
 }
 
 function gradientColor(pct) {
-  if (pct < 3)  return '#2ed573'   // flat / downhill
-  if (pct < 6)  return '#ffd32a'   // moderate climb
-  if (pct < 9)  return '#ff6348'   // hard climb
-  if (pct < 12) return '#ff0000'   // steep climb
-  return '#4C2E30'                  // very steep
+  if (pct < 3)  return '#2ed573'
+  if (pct < 6)  return '#ffd32a'
+  if (pct < 9)  return '#ff6348'
+  if (pct < 12) return '#ff0000'
+  return '#4C2E30'
 }
 
 function set(id, value) {

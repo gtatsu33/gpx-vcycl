@@ -46,11 +46,22 @@ export class HrsClient {
   #onDataCallback = null
   #onStateCallback = null
 
-  async connect() {
-    this.#device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [HRS_SERVICE_UUID] }],
-    })
+  get device() { return this.#device }
 
+  async connect(nameHint = null) {
+    const filters = nameHint
+      ? [{ name: nameHint }, { services: [HRS_SERVICE_UUID] }]
+      : [{ services: [HRS_SERVICE_UUID] }]
+    this.#device = await navigator.bluetooth.requestDevice({ filters })
+    await this.#setupGatt()
+  }
+
+  async connectToDevice(device) {
+    this.#device = device
+    await this.#setupGatt()
+  }
+
+  async #setupGatt() {
     this.#device.addEventListener('gattserverdisconnected', () => {
       this.#onStateCallback?.('disconnected')
     })

@@ -45,18 +45,39 @@ export function calculateGradients(points, windowM = 30) {
 export class Route {
   #name
   #points
+  #gradientBuckets = []
+  static #BUCKET_M = 50
 
   constructor(name, points) {
     this.#name   = name
     this.#points = points
+    this.#buildGradientBuckets()
   }
 
-  static fromGpx(gpxText, { windowM = 30 } = {}) {
+  #buildGradientBuckets() {
+    const totalM = this.totalDistanceM
+    if (totalM <= 0 || this.#points.length < 2) return
+    const bM = Route.#BUCKET_M
+    const count = Math.ceil(totalM / bM) + 1
+    for (let i = 0; i < count; i++) {
+      const s  = i * bM
+      const e  = Math.min(s + bM, totalM)
+      const ea = this.getElevationAt(s)
+      const eb = this.getElevationAt(e)
+      const pct = (ea !== null && eb !== null && e > s)
+        ? ((eb - ea) / (e - s)) * 100
+        : 0
+      this.#gradientBuckets.push(pct)
+    }
+  }
+
+  static fromGpx(gpxText, { windowM = 30, reversed = false } = {}) {
     const { name, rawPoints } = parseGpx(gpxText)
+    const ordered = reversed ? [...rawPoints].reverse() : rawPoints
 
     let cumM = 0
-    const withDist = rawPoints.map((pt, i) => {
-      if (i > 0) cumM += haversineM(rawPoints[i - 1].lat, rawPoints[i - 1].lon, pt.lat, pt.lon)
+    const withDist = ordered.map((pt, i) => {
+      if (i > 0) cumM += haversineM(ordered[i - 1].lat, ordered[i - 1].lon, pt.lat, pt.lon)
       return { ...pt, distanceFromStartM: cumM }
     })
 
@@ -106,12 +127,11 @@ export class Route {
     return a + (b - a) * t
   }
 
-  /** Smoothed gradient [%] at distanceM [m]. */
+  /** Stable gradient [%] at distanceM [m] — 50 m bucket, constant within each segment. */
   getGradientAt(distanceM) {
-    const { i, t } = this.#findSegment(distanceM)
-    const a = this.#points[i].gradientPercent
-    const b = this.#points[i + 1].gradientPercent
-    return a + (b - a) * t
+    if (this.#gradientBuckets.length === 0) return 0
+    const idx = Math.floor(distanceM / Route.#BUCKET_M)
+    return this.#gradientBuckets[Math.max(0, Math.min(idx, this.#gradientBuckets.length - 1))]
   }
 
   /** { lat, lon } at distanceM [m]. */

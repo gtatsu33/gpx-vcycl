@@ -87,10 +87,23 @@ async function renderList(mapView, listEl, profileSvg, onRouteSelected) {
         <span class="route-name">${escHtml(r.name)}</span>
         <span class="route-meta">${fmtDist(r.totalDistanceM)} &middot; ${fmtGain(r.totalElevationGainM)}</span>
       </div>
+      <label class="reverse-label" title="逆走モード">
+        <input type="checkbox" class="reverse-checkbox"> 逆走
+      </label>
       <button class="route-delete-btn" aria-label="削除">✕</button>
     `
 
-    item.querySelector('.route-info').addEventListener('click', () => selectRoute(r, mapView, listEl, profileSvg, onRouteSelected))
+    const reverseCheckbox = item.querySelector('.reverse-checkbox')
+
+    item.querySelector('.route-info').addEventListener('click', () => {
+      selectRoute(r, mapView, listEl, profileSvg, onRouteSelected, reverseCheckbox.checked)
+    })
+
+    reverseCheckbox.addEventListener('change', () => {
+      if (item.classList.contains('selected')) {
+        selectRoute(r, mapView, listEl, profileSvg, onRouteSelected, reverseCheckbox.checked)
+      }
+    })
 
     item.querySelector('.route-delete-btn').addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -103,11 +116,11 @@ async function renderList(mapView, listEl, profileSvg, onRouteSelected) {
   }
 }
 
-function selectRoute(record, mapView, listEl, profileSvg, onRouteSelected) {
+function selectRoute(record, mapView, listEl, profileSvg, onRouteSelected, reversed = false) {
   listEl.querySelectorAll('.route-item').forEach((el) => el.classList.remove('selected'))
   listEl.querySelector(`[data-id="${record.id}"]`)?.classList.add('selected')
 
-  const route = Route.fromGpx(record.gpxText)
+  const route = Route.fromGpx(record.gpxText, { reversed })
   mapView.setRoute(route)
   renderProfile(route, profileSvg)
   onRouteSelected?.({ route, id: record.id, name: record.name })

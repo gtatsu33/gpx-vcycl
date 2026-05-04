@@ -108,11 +108,22 @@ export class FtmsClient {
   #controlPoint     = null
   #pendingResponse  = null  // { opcode: number, resolve: fn, reject: fn }
 
-  async connect() {
-    this.#device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [FTMS_SERVICE_UUID] }],
-    })
+  get device() { return this.#device }
 
+  async connect(nameHint = null) {
+    const filters = nameHint
+      ? [{ name: nameHint }, { services: [FTMS_SERVICE_UUID] }]
+      : [{ services: [FTMS_SERVICE_UUID] }]
+    this.#device = await navigator.bluetooth.requestDevice({ filters })
+    await this.#setupGatt()
+  }
+
+  async connectToDevice(device) {
+    this.#device = device
+    await this.#setupGatt()
+  }
+
+  async #setupGatt() {
     this.#device.addEventListener('gattserverdisconnected', () => {
       this.#onStateCallback?.('disconnected')
     })

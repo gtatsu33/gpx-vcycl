@@ -28,6 +28,7 @@ export class RideController {
 
   // Trainer control
   #ftmsClient               = null
+  #trainerDifficulty        = 0.5
   #gradientUpdateIntervalMs
   #lastGradientSentAt       = 0
   #lastSentGradient         = null
@@ -58,6 +59,7 @@ export class RideController {
     onFinished               = null,
     smoothingWindowSec       = 3,
     gradientUpdateIntervalMs = 1000,
+    trainerDifficulty        = 0.5,
   }) {
     this.#simulator              = new RideSimulator(route, params)
     this.#route                  = route
@@ -70,6 +72,7 @@ export class RideController {
     this.#routeId                = routeId
     this.#routeName              = routeName
     this.#ftmsClient             = ftmsClient
+    this.#trainerDifficulty      = trainerDifficulty
     this.#onFinished             = onFinished
     this.#gradientUpdateIntervalMs = gradientUpdateIntervalMs
 
@@ -154,6 +157,7 @@ export class RideController {
     this.#hudView.update({
       velocityMs:      state.velocityMs,
       distanceM:       state.distanceM,
+      totalDistanceM:  this.#route.totalDistanceM,
       elapsedSec:      state.elapsedSec,
       elevationGainM:  state.elevationGainM,
       powerW:          smoothPowerW,
@@ -186,7 +190,7 @@ export class RideController {
       const elapsed   = now - this.#lastGradientSentAt
       const bigChange = Math.abs(gradient - (this.#lastSentGradient ?? Infinity)) >= 1.0
       if (elapsed >= this.#gradientUpdateIntervalMs || bigChange) {
-        this.#sendGradient(gradient)
+        this.#sendGradient(gradient * this.#trainerDifficulty)
         this.#lastGradientSentAt = now
         this.#lastSentGradient   = gradient
       }

@@ -66,11 +66,22 @@ export class CpsClient {
   #onStateCallback = null
   #cadenceCalc = createCadenceCalculator()
 
-  async connect() {
-    this.#device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [CPS_SERVICE_UUID] }],
-    })
+  get device() { return this.#device }
 
+  async connect(nameHint = null) {
+    const filters = nameHint
+      ? [{ name: nameHint }, { services: [CPS_SERVICE_UUID] }]
+      : [{ services: [CPS_SERVICE_UUID] }]
+    this.#device = await navigator.bluetooth.requestDevice({ filters })
+    await this.#setupGatt()
+  }
+
+  async connectToDevice(device) {
+    this.#device = device
+    await this.#setupGatt()
+  }
+
+  async #setupGatt() {
     this.#device.addEventListener('gattserverdisconnected', () => {
       this.#onStateCallback?.('disconnected')
     })

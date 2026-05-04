@@ -13,6 +13,29 @@ import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stra
 // ── DB status ──────────────────────────────────────────────────────────
 const dbStatusEl = document.getElementById('db-status')
 
+// ── Wake Lock ──────────────────────────────────────────────────────────
+let wakeLock = null
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return
+  try {
+    wakeLock = await navigator.wakeLock.request('screen')
+    wakeLock.addEventListener('release', () => { wakeLock = null })
+  } catch { /* unsupported or denied — silent */ }
+}
+
+function releaseWakeLock() {
+  wakeLock?.release().catch(() => {})
+  wakeLock = null
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    const routeActive = document.querySelector('#tab-route.active')
+    if (routeActive) requestWakeLock()
+  }
+})
+
 // ── Tab switching ──────────────────────────────────────────────────────
 let mapView = null
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -20,7 +43,8 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     const target = btn.dataset.tab
     document.querySelectorAll('.tab-btn').forEach((b)     => b.classList.toggle('active', b.dataset.tab === target))
     document.querySelectorAll('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${target}`))
-    if (target === 'route'   && mapView) requestAnimationFrame(() => mapView.invalidateSize())
+    if (target === 'route')   { requestAnimationFrame(() => mapView?.invalidateSize()); requestWakeLock() }
+    if (target !== 'route')   releaseWakeLock()
     if (target === 'history') renderRideHistory()
   })
 })
@@ -41,6 +65,9 @@ document.getElementById('cda-input').addEventListener('input', (e) => {
 })
 document.getElementById('crr-input').addEventListener('input', (e) => {
   document.getElementById('crr-val').textContent = parseFloat(e.target.value).toFixed(4)
+})
+document.getElementById('trainer-difficulty-input').addEventListener('input', (e) => {
+  document.getElementById('trainer-difficulty-val').textContent = parseFloat(e.target.value).toFixed(1)
 })
 
 // ── Strava ─────────────────────────────────────────────────────────────
@@ -83,7 +110,12 @@ async function loadSettings() {
     if (v != null) { crrEl.value = v; document.getElementById('crr-val').textContent = parseFloat(v).toFixed(4) }
   })
   db.get('settings', 'trainerControlEnabled').then((v) => {
-    document.getElementById('trainer-control-toggle').checked = v ?? false
+    document.getElementById('trainer-control-toggle').checked = v ?? true
+  })
+  db.get('settings', 'trainerDifficulty').then((v) => {
+    const val = v ?? 0.5
+    document.getElementById('trainer-difficulty-input').value = val
+    document.getElementById('trainer-difficulty-val').textContent = parseFloat(val).toFixed(1)
   })
 }
 
@@ -97,6 +129,7 @@ async function saveSettings() {
     db.put('settings', num('crr-input'),          'crr'),
     db.put('settings', num('smoothing-input'),    'smoothingWindowSec'),
     db.put('settings', document.getElementById('trainer-control-toggle').checked, 'trainerControlEnabled'),
+    db.put('settings', num('trainer-difficulty-input'), 'trainerDifficulty'),
   ])
 }
 
@@ -132,12 +165,36 @@ document.getElementById('reset-trainer-btn').addEventListener('click', () => {
   ftmsClient?.reset().catch((err) => console.warn('Reset trainer failed:', err))
 })
 
+function showStravaWarningDialog() {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('strava-warning-overlay')
+    overlay.classList.add('open')
+    const cancel  = document.getElementById('strava-warning-cancel')
+    const proceed = document.getElementById('strava-warning-proceed')
+    const cleanup = (val) => {
+      overlay.classList.remove('open')
+      cancel.onclick  = null
+      proceed.onclick = null
+      resolve(val)
+    }
+    cancel.onclick  = () => cleanup(false)
+    proceed.onclick = () => cleanup(true)
+  })
+}
+
 startBtn.addEventListener('click', async () => {
   if (!selectedRoute || !getLiveData) return
+
+  const stravaInfo = await getConnectionInfo()
+  if (!stravaInfo) {
+    const ok = await showStravaWarningDialog()
+    if (!ok) return
+  }
 
   const params             = await loadPhysicsParams()
   const smoothingWindowSec = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
   const trainerEnabled     = document.getElementById('trainer-control-toggle').checked
+  const trainerDifficulty  = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
 
   rideController = new RideController({
     route:      selectedRoute,
@@ -148,6 +205,7 @@ startBtn.addEventListener('click', async () => {
     hudView,
     getLiveData,
     smoothingWindowSec,
+    trainerDifficulty,
     ftmsClient:  trainerEnabled ? ftmsClient : null,
     onFinished: (summary) => {
       rideController = null
@@ -183,6 +241,7 @@ function setRidingState(riding) {
   preRidePanelEl.hidden = riding
   hudPanelEl.hidden     = !riding
   rideControlsEl.hidden = !riding
+  document.getElementById('course-elevation-map').style.display = riding ? 'block' : 'none'
   if (riding) {
     isPaused = false
     pauseResumeBtn.textContent = '⏸ 一時停止'
