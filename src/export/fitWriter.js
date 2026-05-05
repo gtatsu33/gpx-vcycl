@@ -211,6 +211,110 @@ export function buildFit(summary) {
   return result
 }
 
+/**
+ * ワークアウト（GPS無し）のFITバイナリを生成する。Stravaにtrainer=1でアップロードする用。
+ *
+ * @param {{
+ *   workoutName: string,
+ *   startedAt: Date,
+ *   endedAt:   Date,
+ *   samples:   Array<{
+ *     timestampMs: number,
+ *     powerW: number, cadenceRpm: number, heartRateBpm: number,
+ *   }>
+ * }} summary
+ * @returns {Uint8Array}
+ */
+export function buildWorkoutFit(summary) {
+  const { startedAt, endedAt, samples } = summary
+  const w = new ByteWriter()
+
+  const startTs    = fitTs(startedAt.getTime())
+  const endTs      = fitTs(endedAt.getTime())
+  const elapsedMs  = endedAt.getTime() - startedAt.getTime()
+  const avgPowerW  = Math.round(avg(samples, s => s.powerW))
+  const avgHR      = Math.round(avg(samples, s => s.heartRateBpm))
+  const avgCadence = Math.round(avg(samples, s => s.cadenceRpm))
+
+  writeDef(w, LOCAL.FILE_ID, GMSG.FILE_ID, [
+    [0, 1, B.ENUM],   // type
+    [1, 2, B.UINT16], // manufacturer
+    [2, 2, B.UINT16], // product
+    [4, 4, B.UINT32], // time_created
+  ])
+  w.u8(LOCAL.FILE_ID)
+  w.u8(4); w.u16(255); w.u16(0); w.u32(startTs)
+
+  if (samples.length > 0) {
+    writeDef(w, LOCAL.RECORD, GMSG.RECORD, [
+      [253, 4, B.UINT32], // timestamp
+      [7,   2, B.UINT16], // power (W)
+      [3,   1, B.UINT8],  // heart_rate (bpm)
+      [4,   1, B.UINT8],  // cadence (rpm)
+    ])
+    for (const s of samples) {
+      w.u8(LOCAL.RECORD)
+      w.u32(fitTs(s.timestampMs))
+      w.u16(Math.max(0, Math.round(s.powerW)))
+      w.u8(Math.max(0, Math.round(s.heartRateBpm)))
+      w.u8(Math.max(0, Math.round(s.cadenceRpm)))
+    }
+  }
+
+  writeDef(w, LOCAL.LAP, GMSG.LAP, [
+    [253, 4, B.UINT32], // timestamp
+    [0,   1, B.ENUM],   // event
+    [1,   1, B.ENUM],   // event_type
+    [2,   4, B.UINT32], // start_time
+    [7,   4, B.UINT32], // total_elapsed_time
+    [25,  2, B.UINT16], // message_index
+  ])
+  w.u8(LOCAL.LAP)
+  w.u32(endTs); w.u8(9); w.u8(1); w.u32(startTs)
+  w.u32(Math.round(elapsedMs)); w.u16(0)
+
+  writeDef(w, LOCAL.SESSION, GMSG.SESSION, [
+    [253, 4, B.UINT32], // timestamp
+    [0,   1, B.ENUM],   // event
+    [1,   1, B.ENUM],   // event_type
+    [2,   4, B.UINT32], // start_time
+    [5,   1, B.ENUM],   // sport
+    [6,   1, B.ENUM],   // sub_sport
+    [7,   4, B.UINT32], // total_elapsed_time
+    [17,  1, B.UINT8],  // avg_heart_rate
+    [19,  1, B.UINT8],  // avg_cadence
+    [20,  2, B.UINT16], // avg_power
+  ])
+  w.u8(LOCAL.SESSION)
+  w.u32(endTs); w.u8(9); w.u8(1); w.u32(startTs)
+  w.u8(2)   // sport: cycling
+  w.u8(6)   // sub_sport: indoor_cycling
+  w.u32(Math.round(elapsedMs))
+  w.u8(avgHR); w.u8(avgCadence); w.u16(avgPowerW)
+
+  writeDef(w, LOCAL.ACTIVITY, GMSG.ACTIVITY, [
+    [253, 4, B.UINT32], // timestamp
+    [0,   4, B.UINT32], // total_timer_time
+    [1,   2, B.UINT16], // num_sessions
+    [2,   1, B.ENUM],   // type
+    [3,   1, B.ENUM],   // event
+    [4,   1, B.ENUM],   // event_type
+  ])
+  w.u8(LOCAL.ACTIVITY)
+  w.u32(endTs); w.u32(Math.round(elapsedMs))
+  w.u16(1); w.u8(0); w.u8(26); w.u8(1)
+
+  const data    = w.bytes
+  const header  = buildHeader(data.length)
+  const dataCrc = fitCrc(data)
+  const result  = new Uint8Array(header.length + data.length + 2)
+  result.set(header)
+  result.set(data, header.length)
+  result[header.length + data.length]     = dataCrc & 0xFF
+  result[header.length + data.length + 1] = (dataCrc >> 8) & 0xFF
+  return result
+}
+
 function buildHeader(dataSize) {
   const h  = new Uint8Array(14)
   const dv = new DataView(h.buffer)

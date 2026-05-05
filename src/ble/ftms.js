@@ -194,7 +194,16 @@ export class FtmsClient {
     await this.#sendCommand(FTMS_OPCODE.RESET)
   }
 
-  // ERG モード（将来実装）: setTargetPower(powerW) は SET_TARGET_POWER (0x05) を使用する
+  /**
+   * Set Target Power (0x05) — ERGモード。指定ワット数に負荷を固定する。
+   * @param {number} powerW
+   */
+  async setTargetPower(powerW) {
+    if (!this.#controlPoint) throw new Error('Control Point not available')
+    const data = new Uint8Array(2)
+    new DataView(data.buffer).setInt16(0, Math.max(0, Math.round(powerW)), true)
+    await this.#sendCommand(FTMS_OPCODE.SET_TARGET_POWER, data)
+  }
 
   async #sendCommand(opcode, data = new Uint8Array(0)) {
     if (!this.#controlPoint) throw new Error('Control Point not available')

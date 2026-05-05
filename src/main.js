@@ -9,6 +9,10 @@ import { renderRideHistory }         from './ui/rideHistory.js'
 import { DEFAULT_PHYSICS }           from './domain/physics.js'
 import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stravaDisconnect }
   from './strava/auth.js'
+import { initWorkoutTab }            from './ui/workoutTab.js'
+import { buildWorkoutFit }           from './export/fitWriter.js'
+import { uploadToStrava }            from './strava/upload.js'
+import { saveRide, markUploaded, markUploadFailed } from './storage/rides.js'
 
 // ── DB status ──────────────────────────────────────────────────────────
 const dbStatusEl = document.getElementById('db-status')
@@ -43,8 +47,9 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     const target = btn.dataset.tab
     document.querySelectorAll('.tab-btn').forEach((b)     => b.classList.toggle('active', b.dataset.tab === target))
     document.querySelectorAll('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${target}`))
-    if (target === 'route')   { requestAnimationFrame(() => mapView?.invalidateSize()); requestWakeLock() }
-    if (target !== 'route')   releaseWakeLock()
+    if (target === 'route' || target === 'workout') requestWakeLock()
+    if (target !== 'route' && target !== 'workout') releaseWakeLock()
+    if (target === 'route')   requestAnimationFrame(() => mapView?.invalidateSize())
     if (target === 'history') renderRideHistory()
   })
 })
@@ -94,12 +99,17 @@ async function updateStravaStatusUI() {
   }
 }
 
+function getFtpW() {
+  return parseInt(document.getElementById('ftp-input').value, 10) || 170
+}
+
 async function loadSettings() {
   const db = getDb()
   const set = (id, key) => db.get('settings', key).then((v) => { if (v != null) document.getElementById(id).value = v })
   set('rider-weight-input', 'riderWeightKg')
   set('bike-weight-input',  'bikeWeightKg')
   set('smoothing-input',    'smoothingWindowSec')
+  set('ftp-input',          'ftpW')
 
   const cdaEl = document.getElementById('cda-input')
   const crrEl = document.getElementById('crr-input')
@@ -130,6 +140,7 @@ async function saveSettings() {
     db.put('settings', num('smoothing-input'),    'smoothingWindowSec'),
     db.put('settings', document.getElementById('trainer-control-toggle').checked, 'trainerControlEnabled'),
     db.put('settings', num('trainer-difficulty-input'), 'trainerDifficulty'),
+    db.put('settings', num('ftp-input'), 'ftpW'),
   ])
 }
 
@@ -294,7 +305,91 @@ async function init() {
     },
   })
 
+  initWorkoutTab({
+    getLiveData,
+    ftmsClient,
+    getFtpW,
+    onWorkoutEnd: (summary) => showWorkoutEndModal(summary),
+  })
+
   await loadSettings()
+}
+
+// ── Workout end modal ──────────────────────────────────────────────────────────
+
+function showWorkoutEndModal(summary) {
+  const overlay    = document.getElementById('workout-end-overlay')
+  const nameInput  = document.getElementById('workout-end-name')
+  const statusEl   = document.getElementById('workout-end-status')
+  const summaryEl  = document.getElementById('workout-end-summary')
+  const uploadBtn  = document.getElementById('workout-end-upload-btn')
+  const saveBtn    = document.getElementById('workout-end-save-btn')
+  const discardBtn = document.getElementById('workout-end-discard-btn')
+
+  const elapsedS = (summary.endedAt - summary.startedAt) / 1000
+  const avgPower = summary.samples.length
+    ? Math.round(summary.samples.reduce((s, x) => s + x.powerW, 0) / summary.samples.length)
+    : 0
+  const avgHR = summary.samples.length
+    ? Math.round(summary.samples.reduce((s, x) => s + x.heartRateBpm, 0) / summary.samples.length)
+    : 0
+
+  summaryEl.innerHTML = `
+    <div class="summary-row"><span>時間</span><span>${fmtTimeS(elapsedS)}</span></div>
+    <div class="summary-row"><span>平均パワー</span><span>${avgPower} W</span></div>
+    <div class="summary-row"><span>平均心拍</span><span>${avgHR > 0 ? avgHR + ' bpm' : '--'}</span></div>
+  `
+  nameInput.value = 'ワークアウト'
+  statusEl.textContent = ''
+  statusEl.className   = 'ride-end-status'
+  overlay.classList.add('open')
+
+  const close = () => overlay.classList.remove('open')
+
+  const setLoading = (on) => { uploadBtn.disabled = saveBtn.disabled = discardBtn.disabled = on }
+
+  uploadBtn.onclick = async () => {
+    const name = nameInput.value.trim() || 'ワークアウト'
+    setLoading(true)
+    statusEl.textContent = '保存中...'; statusEl.className = 'ride-end-status'
+    let rideId
+    try {
+      rideId = await saveRide({ ...summary, routeName: name })
+    } catch (err) {
+      statusEl.textContent = `保存失敗: ${err.message}`; statusEl.className = 'ride-end-status error'
+      setLoading(false); return
+    }
+    statusEl.textContent = 'Stravaにアップロード中...'
+    try {
+      const fitData = buildWorkoutFit({ ...summary, workoutName: name })
+      const actId   = await uploadToStrava(fitData, { name, trainer: true })
+      await markUploaded(rideId, actId)
+      statusEl.textContent = 'アップロード成功！'
+      renderRideHistory()
+      setTimeout(close, 2000)
+    } catch (err) {
+      await markUploadFailed(rideId, err.message).catch(() => {})
+      statusEl.textContent = `アップロード失敗（ローカルに保存済み）: ${err.message}`
+      statusEl.className   = 'ride-end-status error'
+      setLoading(false)
+    }
+  }
+
+  saveBtn.onclick = async () => {
+    await saveRide({ ...summary, routeName: nameInput.value.trim() || 'ワークアウト' })
+    renderRideHistory()
+    close()
+  }
+
+  discardBtn.onclick = close
+}
+
+function fmtTimeS(totalSec) {
+  const s = Math.floor(totalSec)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const pad = (n) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`
 }
 
 init()

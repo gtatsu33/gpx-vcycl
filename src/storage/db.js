@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'virtualCycling'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 /** @type {import('idb').IDBPDatabase | null} */
 let db = null
@@ -25,8 +25,9 @@ export async function initDb() {
         // settings: キーバリュー設定
         database.createObjectStore('settings')
       }
-      // バージョンアップ時はここに追加:
-      // if (oldVersion < 2) { ... }
+      if (oldVersion < 2) {
+        database.createObjectStore('workouts', { keyPath: 'id', autoIncrement: true })
+      }
     },
   })
   return db

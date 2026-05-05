@@ -11,7 +11,7 @@ const POLL_MAX_TRIES   = 12  // 最大60秒待つ
  * @param {{ name: string }} meta
  * @returns {Promise<string>} Strava activity ID
  */
-export async function uploadToStrava(fitData, { name }) {
+export async function uploadToStrava(fitData, { name, trainer = false }) {
   const token    = await getValidAccessToken()
   const formData = new FormData()
   formData.append('file',       new Blob([fitData], { type: 'application/octet-stream' }), 'ride.fit')
@@ -19,6 +19,7 @@ export async function uploadToStrava(fitData, { name }) {
   formData.append('name',       name)
   formData.append('sport_type', 'VirtualRide')
   formData.append('commute',    '0')
+  if (trainer) formData.append('trainer', '1')
 
   const res = await fetch('https://www.strava.com/api/v3/uploads', {
     method:  'POST',

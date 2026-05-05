@@ -324,6 +324,99 @@
     .settings-row input[type="number"] { width: 5rem; flex: none; text-align: right; }
     .settings-row input[type="range"]  { flex: 1; accent-color: #e94560; }
     .settings-row .range-val { font-size: 0.8rem; color: #aaa; min-width: 3.5rem; text-align: right; }
+
+    /* ── Workout tab ── */
+    #tab-workout { flex-direction: column; overflow: hidden; }
+
+    #workout-pre-panel {
+      flex: 1; min-height: 0; overflow-y: auto;
+      display: flex; flex-direction: column;
+      padding: 0.75rem; gap: 0.5rem;
+      background: #0c1a2e;
+    }
+    #zwo-list {
+      display: flex; flex-direction: column; gap: 0.35rem;
+      flex: 1; overflow-y: auto; min-height: 0;
+    }
+    .zwo-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: #1a3252; border: 1px solid #1e5285;
+      border-radius: 7px; padding: 0.4rem 0.6rem; cursor: pointer; flex-shrink: 0;
+    }
+    .zwo-item:hover   { border-color: #4488ff; }
+    .zwo-item.selected { border-color: #e94560; background: #1a2552; }
+    .zwo-info { flex: 1; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+    .zwo-name { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .zwo-meta { font-size: 0.7rem; color: #888; flex-shrink: 0; }
+    .zwo-mini-profile { width: 120px; height: 30px; flex-shrink: 0; border-radius: 3px; background: #102030; }
+    #workout-profile-svg { width: 100%; height: 80px; flex-shrink: 0; background: #102030; border-radius: 4px; }
+
+    /* Workout running layout */
+    #workout-run-panel {
+      position: relative;
+      flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+    }
+    #workout-main {
+      flex: 1; min-height: 0; display: flex; flex-direction: row;
+    }
+    #workout-hud-panel {
+      flex: 1; min-width: 0; background: #0c1a2e;
+      border-right: 1px solid #1e5285;
+      display: flex; flex-direction: column;
+      padding: 0.75rem; gap: 0.5rem; overflow-y: auto;
+    }
+    .wo-hud-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 0.5rem; flex: 1; min-height: 0; align-content: start;
+    }
+    #workout-seg-panel {
+      flex: 1; min-width: 0; background: #0a1520;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    #workout-seg-list {
+      flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0;
+    }
+    .wo-seg-row {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem; font-variant-numeric: tabular-nums;
+      border-left: 3px solid transparent;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      flex-shrink: 0;
+      transition: background 0.15s, padding 0.15s;
+    }
+    .wo-seg-row.current {
+      border-left-width: 6px;
+      font-weight: 700; font-size: 1.0rem;
+      padding: 0.75rem 0.75rem;
+      filter: brightness(1.15);
+    }
+    #workout-progress-svg {
+      width: 100%; height: 56px; flex-shrink: 0;
+      background: #0c1a2e; border-top: 1px solid #1e5285;
+    }
+    #workout-controls {
+      flex-shrink: 0; display: flex; gap: 0.75rem;
+      padding: 0.5rem 0.75rem; background: #0c1a2e;
+      border-top: 1px solid #1e5285;
+    }
+    #workout-controls button { flex: 1; max-width: 200px; }
+    #wo-hud-remaining { font-size: 0.72rem; color: #888; margin-top: 0.1rem; }
+
+    /* Workout HUD values: white by default, red on alert */
+    .wo-val { color: #fff !important; }
+    .wo-val.alert { color: #e94560 !important; }
+
+    #wo-alert-msg {
+      min-height: 1.4em; font-size: 0.8rem; font-weight: 600;
+      color: #e94560; text-align: center; padding: 0.2rem 0;
+    }
+
+
+    @media (orientation: portrait) {
+      #workout-main { flex-direction: column; }
+      #workout-hud-panel { border-right: none; border-bottom: 1px solid #1e5285; max-height: 40dvh; }
+    }
   </style>
 </head>
 <body>
@@ -336,6 +429,7 @@
   <div id="tab-bar">
     <button class="tab-btn active" data-tab="device">デバイス</button>
     <button class="tab-btn" data-tab="route">ルート</button>
+    <button class="tab-btn" data-tab="workout">ワークアウト</button>
     <button class="tab-btn" data-tab="history">履歴</button>
   </div>
 
@@ -507,6 +601,82 @@
 
   </div><!-- #tab-route -->
 
+  <!-- ── Workout tab ── -->
+  <div id="tab-workout" class="tab-content">
+
+    <!-- Pre-workout panel -->
+    <div id="workout-pre-panel">
+      <div id="workout-file-controls">
+        <button id="load-zwo-btn">ZWOを読み込む</button>
+        <input type="file" id="zwo-file-input" hidden />
+      </div>
+      <div id="zwo-list"></div>
+      <svg id="workout-profile-svg" hidden></svg>
+      <button id="start-workout-btn" disabled>▶ ワークアウトを開始</button>
+    </div>
+
+    <!-- Workout running panel -->
+    <div id="workout-run-panel" hidden>
+
+      <div id="workout-main">
+
+        <!-- Left: HUD -->
+        <div id="workout-hud-panel">
+          <div class="wo-hud-grid">
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-power">--</span>
+              <span class="hud-unit">W</span>
+              <span class="hud-label">パワー（実測）</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-target">--</span>
+              <span class="hud-unit">W</span>
+              <span class="hud-label">ターゲット</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-cadence">--</span>
+              <span class="hud-unit">rpm</span>
+              <span class="hud-label">ケイデンス</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-target-cadence">FREE</span>
+              <span class="hud-unit">rpm</span>
+              <span class="hud-label">目標ケイデンス</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-hr">--</span>
+              <span class="hud-unit">bpm</span>
+              <span class="hud-label">心拍</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-time">0:00</span>
+              <span class="hud-unit">&nbsp;</span>
+              <span class="hud-label">経過時間</span>
+              <span id="wo-hud-remaining">残り--</span>
+            </div>
+          </div>
+          <div id="wo-alert-msg"></div>
+        </div>
+
+        <!-- Right: Segment list -->
+        <div id="workout-seg-panel">
+          <div id="workout-seg-list"></div>
+        </div>
+
+      </div><!-- #workout-main -->
+
+      <!-- Full-width progress chart -->
+      <svg id="workout-progress-svg" viewBox="0 0 1000 56" preserveAspectRatio="none"></svg>
+
+      <!-- Controls -->
+      <div id="workout-controls">
+        <button id="workout-pause-btn">⏸ 一時停止</button>
+        <button id="workout-stop-btn">⏹ 終了</button>
+      </div>
+    </div><!-- #workout-run-panel -->
+
+  </div><!-- #tab-workout -->
+
   <!-- ── History tab ── -->
   <div id="tab-history" class="tab-content">
     <div style="padding: 0.75rem; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:0.5rem;">
@@ -562,6 +732,14 @@
         <div class="settings-row">
           <label for="smoothing-input">パワー・ケイデンス平滑化</label>
           <input type="number" id="smoothing-input" min="1" max="10" value="3" />
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <p class="settings-label">FTP（機能的閾値パワー）</p>
+        <div class="settings-row">
+          <label for="ftp-input">FTP (W)</label>
+          <input type="number" id="ftp-input" min="50" max="500" value="170" />
         </div>
       </div>
 
@@ -628,6 +806,24 @@
       <div class="modal-buttons">
         <button id="route-name-cancel">キャンセル</button>
         <button id="route-name-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workout end modal -->
+  <div id="workout-end-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>ワークアウト終了</h2>
+      <div id="workout-end-summary" class="summary-grid"></div>
+      <div class="settings-group">
+        <p class="settings-label">ライド名</p>
+        <input type="text" id="workout-end-name" placeholder="ワークアウト" />
+      </div>
+      <p id="workout-end-status" class="ride-end-status"></p>
+      <div class="modal-buttons" style="flex-direction:column; gap:0.5rem;">
+        <button id="workout-end-upload-btn">Stravaにアップロード</button>
+        <button id="workout-end-save-btn">保存のみ（後でアップロード）</button>
+        <button id="workout-end-discard-btn" style="background:transparent;border-color:#555;color:#888;">破棄</button>
       </div>
     </div>
   </div>
