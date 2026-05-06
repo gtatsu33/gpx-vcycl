@@ -1,8 +1,7 @@
 import { getDb } from '../storage/db.js'
 
-const CLIENT_ID     = import.meta.env.VITE_STRAVA_CLIENT_ID
-const CLIENT_SECRET = import.meta.env.VITE_STRAVA_CLIENT_SECRET
-const REDIRECT_URI  = import.meta.env.VITE_STRAVA_REDIRECT_URI
+const CLIENT_ID    = import.meta.env.VITE_STRAVA_CLIENT_ID
+const REDIRECT_URI = import.meta.env.VITE_STRAVA_REDIRECT_URI
 
 /** Stravaの認可画面へリダイレクトする */
 export function startAuthorization() {
@@ -15,17 +14,12 @@ export function startAuthorization() {
   window.location.href = url.toString()
 }
 
-/** 認可コードをトークンに交換してDBに保存する */
+/** 認可コードをトークンに交換してDBに保存する（サーバー経由でSecretを秘匿） */
 export async function exchangeCode(code) {
-  const res = await fetch('https://www.strava.com/oauth/token', {
+  const res = await fetch('/.netlify/functions/strava-exchange', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      client_id:     CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      code,
-      grant_type:    'authorization_code',
-    }),
+    body:    JSON.stringify({ code }),
   })
   if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`)
   const data   = await res.json()
@@ -48,15 +42,10 @@ export async function getValidAccessToken() {
 
   if (tokens.expiresAt > Date.now() / 1000 + 60) return tokens.accessToken
 
-  const res = await fetch('https://www.strava.com/oauth/token', {
+  const res = await fetch('/.netlify/functions/strava-refresh', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      client_id:     CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      refresh_token: tokens.refreshToken,
-      grant_type:    'refresh_token',
-    }),
+    body:    JSON.stringify({ refresh_token: tokens.refreshToken }),
   })
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`)
   const data      = await res.json()
