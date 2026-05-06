@@ -23,7 +23,7 @@ export class RideEndModal {
 
   async show(summary) {
     this.#summary = summary
-    this.#nameInput.value = generateRideName(summary.routeName, summary.startedAt)
+    this.#nameInput.value = generateRideName(summary.routeName)
     this.#renderSummary(summary)
     this.#setStatus('')
 
@@ -131,10 +131,8 @@ export class RideEndModal {
   }
 }
 
-function generateRideName(routeName, startedAt) {
-  const d   = new Date(startedAt)
-  const pad = n => String(n).padStart(2, '0')
-  return `Indoor Ride - ${routeName} - ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+function generateRideName(routeName) {
+  return `gpx-vcycl route : ${routeName}`
 }
 
 function avgOf(arr, fn) {

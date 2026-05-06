@@ -1,12 +1,12 @@
 const LOOKAHEAD_M = 1000
 const SAMPLE_M    = 20
-const SVG_W       = 200   // viewBox width for 1km gradient profile
-const SVG_H       = 52
-const PAD_B       = 14    // bottom padding (room for distance labels)
+const SVG_W       = 300   // fallback viewBox width (overridden by clientWidth at render)
+const SVG_H       = 100   // fallback viewBox height (overridden by clientHeight at render)
+const PAD_B       = 14    // bottom padding in px (labels; Y-scale is always 1)
 
 // Course elevation map viewBox width (unit = 1/1000 of total distance)
 const COURSE_VW   = 1000
-const COURSE_VH   = SVG_H
+const COURSE_VH   = 52
 
 export class HUDView {
   #route = null
@@ -55,17 +55,19 @@ export class HUDView {
     const svg = document.getElementById('gradient-profile')
     if (!svg || !this.#route) return
 
-    const route   = this.#route
-    const totalM  = route.totalDistanceM
-    const spanM   = LOOKAHEAD_M          // X軸は常に1000m固定
+    // viewBox をピクセル等倍にすることでテキスト・線の歪みをなくす
+    const W = svg.clientWidth  || SVG_W
+    const H = svg.clientHeight || SVG_H
 
-    // ゴール以降を黒く塗る
-    const goalRelX = Math.min((totalM - currentDistanceM) / spanM * SVG_W, SVG_W)
-    const blackRect = goalRelX < SVG_W
-      ? `<rect x="${goalRelX.toFixed(1)}" y="0" width="${(SVG_W - goalRelX).toFixed(1)}" height="${SVG_H}" fill="#000"/>`
+    const route  = this.#route
+    const totalM = route.totalDistanceM
+    const spanM  = LOOKAHEAD_M
+
+    const goalRelX = Math.min((totalM - currentDistanceM) / spanM * W, W)
+    const blackRect = goalRelX < W
+      ? `<rect x="${goalRelX.toFixed(1)}" y="0" width="${(W - goalRelX).toFixed(1)}" height="${H}" fill="#000"/>`
       : ''
 
-    // ゴールまでのサンプルのみ
     const endM = Math.min(currentDistanceM + LOOKAHEAD_M, totalM)
     if (endM <= currentDistanceM) { svg.innerHTML = blackRect; return }
 
@@ -77,11 +79,11 @@ export class HUDView {
       samples.push({ d: endM, elev: route.getElevationAt(endM) ?? 0, grad: route.getGradientAt(endM) })
     }
 
-    const eleMin = Math.min(...samples.map((s) => s.elev))
-    const ELE_RANGE_M = 100
+    const eleMin      = Math.min(...samples.map((s) => s.elev))
+    const ELE_RANGE_M = 50
 
-    const toX = (d) => ((d - currentDistanceM) / spanM) * SVG_W
-    const toY = (e) => SVG_H - PAD_B - ((e - eleMin) / ELE_RANGE_M) * (SVG_H - PAD_B - 2)
+    const toX = (d) => ((d - currentDistanceM) / spanM) * W
+    const toY = (e) => H - PAD_B - ((e - eleMin) / ELE_RANGE_M) * (H - PAD_B - 2)
 
     // 色ポリゴン
     const parts = []
@@ -91,37 +93,34 @@ export class HUDView {
       let ei = si
       while (ei < samples.length && gradientColor(samples[ei].grad) === col) ei++
       const pts = [
-        `${toX(samples[si - 1].d).toFixed(1)},${SVG_H}`,
+        `${toX(samples[si - 1].d).toFixed(1)},${H}`,
         `${toX(samples[si - 1].d).toFixed(1)},${toY(samples[si - 1].elev).toFixed(1)}`,
       ]
       for (let k = si; k < ei; k++) {
         pts.push(`${toX(samples[k].d).toFixed(1)},${toY(samples[k].elev).toFixed(1)}`)
       }
-      pts.push(`${toX(samples[ei - 1].d).toFixed(1)},${SVG_H}`)
+      pts.push(`${toX(samples[ei - 1].d).toFixed(1)},${H}`)
       parts.push(`<polygon points="${pts.join(' ')}" fill="${col}" fill-opacity="0.9" shape-rendering="crispEdges"/>`)
       si = ei
     }
 
-    // 白線
     const polyPts = samples.map((s) => `${toX(s.d).toFixed(1)},${toY(s.elev).toFixed(1)}`).join(' ')
-    const line    = `<polyline points="${polyPts}" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1"/>`
-
-    // 現在位置マーカー
-    const marker = `<line x1="1" y1="0" x2="1" y2="${SVG_H - PAD_B}" stroke="#fff" stroke-width="1.5" opacity="0.8"/>`
+    const line    = `<polyline points="${polyPts}" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>`
+    const marker  = `<line x1="1" y1="0" x2="1" y2="${H - PAD_B}" stroke="#fff" stroke-width="2" opacity="0.8"/>`
 
     // 距離ラベル（500m・1km）
-    const x500  = toX(currentDistanceM + 500)
-    const lbl500 = x500 <= SVG_W - 2
-      ? `<line x1="${x500.toFixed(1)}" y1="${SVG_H - PAD_B}" x2="${x500.toFixed(1)}" y2="${SVG_H - PAD_B + 4}" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>` +
-        `<text x="${x500.toFixed(1)}" y="${SVG_H - 1}" fill="rgba(255,255,255,0.65)" font-size="6" text-anchor="middle" font-family="system-ui,sans-serif">500m</text>`
+    const x500   = toX(currentDistanceM + 500)
+    const lbl500 = x500 <= W - 2
+      ? `<line x1="${x500.toFixed(1)}" y1="${H - PAD_B}" x2="${x500.toFixed(1)}" y2="${H - PAD_B + 4}" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>` +
+        `<text x="${x500.toFixed(1)}" y="${H - 2}" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="middle" font-family="system-ui,sans-serif">500m</text>`
       : ''
-    const x1000 = SVG_W
-    const lbl1km = goalRelX >= SVG_W
-      ? `<line x1="${x1000 - 1}" y1="${SVG_H - PAD_B}" x2="${x1000 - 1}" y2="${SVG_H - PAD_B + 4}" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>` +
-        `<text x="${x1000 - 2}" y="${SVG_H - 1}" fill="rgba(255,255,255,0.65)" font-size="6" text-anchor="end" font-family="system-ui,sans-serif">1km</text>`
+    const x1000  = W
+    const lbl1km = goalRelX >= W
+      ? `<line x1="${x1000 - 1}" y1="${H - PAD_B}" x2="${x1000 - 1}" y2="${H - PAD_B + 4}" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>` +
+        `<text x="${x1000 - 3}" y="${H - 2}" fill="rgba(255,255,255,0.7)" font-size="11" text-anchor="end" font-family="system-ui,sans-serif">1km</text>`
       : ''
 
-    svg.setAttribute('viewBox', `0 0 ${SVG_W} ${SVG_H}`)
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
     svg.setAttribute('preserveAspectRatio', 'none')
     svg.innerHTML = blackRect + parts.join('') + line + marker + lbl500 + lbl1km
   }
