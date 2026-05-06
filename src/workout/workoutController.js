@@ -1,4 +1,5 @@
 import { MovingAverage } from '../utils/smoothing.js'
+import { stepVelocity, DEFAULT_PHYSICS } from '../domain/physics.js'
 
 const TICK_MS              = 100
 const SAMPLE_INTERVAL_MS   = 1000
@@ -78,6 +79,9 @@ export class WorkoutController {
   #zeroPowerCount     = 0       // 連続0Wカウント（自動一時停止用）
   #highPowerCount     = 0       // 連続≥10Wカウント（自動再開用）
   #manualPauseSawZero = false   // 手動停止中に一度0Wを見たか（手動自動再開の条件）
+  #params             = DEFAULT_PHYSICS
+  #distanceM          = 0
+  #velocityMs         = 0
 
   /**
    * @param {{
@@ -100,6 +104,7 @@ export class WorkoutController {
     onAutoPause        = null,
     onAutoResume       = null,
     smoothingWindowSec = 3,
+    params             = null,
   }) {
     this.#segments      = segments
     this.#ftpW          = ftpW
@@ -111,11 +116,36 @@ export class WorkoutController {
     this.#onAutoResume  = onAutoResume
     this.#powerAvg      = new MovingAverage(smoothingWindowSec)
     this.#cadenceAvg    = new MovingAverage(smoothingWindowSec)
+    this.#params        = params ?? DEFAULT_PHYSICS
   }
 
   get isRunning()    { return this.#intervalId !== null }
   get isPaused()     { return this.#paused }
   get isAutoPaused() { return this.#autoPaused }
+
+  getCheckpoint() {
+    if (!this.#startedAt) return null
+    return {
+      startedAt:  this.#startedAt.getTime(),
+      elapsedMs:  this.#elapsedMs,
+      samples:    [...this.#samples],
+      distanceM:  this.#distanceM,
+      velocityMs: this.#velocityMs,
+    }
+  }
+
+  restoreFrom({ startedAt, elapsedMs, samples, distanceM = 0, velocityMs = 0 }) {
+    if (this.#intervalId) return
+    this.#startedAt    = new Date(startedAt)
+    this.#elapsedMs    = elapsedMs
+    this.#samples      = [...samples]
+    this.#distanceM    = distanceM
+    this.#velocityMs   = velocityMs
+    this.#lastSampleAt = samples.at(-1)?.timestampMs ?? 0
+    this.#paused       = true
+    this.#tickAt       = Date.now()
+    this.#intervalId   = setInterval(() => this.#tick(), TICK_MS)
+  }
 
   get totalDurationS() {
     return this.#segments.reduce((s, seg) => s + seg.durationS, 0)
@@ -126,6 +156,8 @@ export class WorkoutController {
     this.#paused      = false
     this.#startedAt   = new Date()
     this.#elapsedMs   = 0
+    this.#distanceM   = 0
+    this.#velocityMs  = 0
     this.#samples     = []
     this.#lastSampleAt = 0
     this.#tickAt      = Date.now()
@@ -186,7 +218,12 @@ export class WorkoutController {
     this.#tickAt = now
 
     const effectivePaused = this.#paused || this.#autoPaused
-    if (!effectivePaused) this.#elapsedMs += dtMs
+    if (!effectivePaused) {
+      this.#elapsedMs  += dtMs
+      const dtSec       = dtMs / 1000
+      this.#velocityMs  = stepVelocity(this.#powerAvg.average, 0, this.#velocityMs, dtSec, this.#params)
+      this.#distanceM  += this.#velocityMs * dtSec
+    }
 
     const elapsedS = this.#elapsedMs / 1000
     const totalS   = this.totalDurationS
@@ -224,6 +261,8 @@ export class WorkoutController {
       cadenceRpm:  smoothCadence,
       heartRateBpm,
       autoPaused:  this.#autoPaused,
+      distanceM:   this.#distanceM,
+      velocityMs:  this.#velocityMs,
     })
 
     // 1Hzサンプリング
@@ -233,6 +272,8 @@ export class WorkoutController {
         powerW:       smoothPowerW,
         cadenceRpm:   smoothCadence,
         heartRateBpm,
+        distanceM:    this.#distanceM,
+        velocityMs:   this.#velocityMs,
       })
       this.#lastSampleAt = now
     }

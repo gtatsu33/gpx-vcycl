@@ -245,12 +245,16 @@ export function buildWorkoutFit(summary) {
   w.u8(LOCAL.FILE_ID)
   w.u8(4); w.u16(255); w.u16(0); w.u32(startTs)
 
+  const totalDistM = samples.length > 0 ? (samples.at(-1).distanceM ?? 0) : 0
+
   if (samples.length > 0) {
     writeDef(w, LOCAL.RECORD, GMSG.RECORD, [
       [253, 4, B.UINT32], // timestamp
       [7,   2, B.UINT16], // power (W)
       [3,   1, B.UINT8],  // heart_rate (bpm)
       [4,   1, B.UINT8],  // cadence (rpm)
+      [5,   4, B.UINT32], // distance (m*100)
+      [6,   2, B.UINT16], // speed (m/s * 1000)
     ])
     for (const s of samples) {
       w.u8(LOCAL.RECORD)
@@ -258,6 +262,8 @@ export function buildWorkoutFit(summary) {
       w.u16(Math.max(0, Math.round(s.powerW)))
       w.u8(Math.max(0, Math.round(s.heartRateBpm)))
       w.u8(Math.max(0, Math.round(s.cadenceRpm)))
+      w.u32(Math.round((s.distanceM ?? 0) * 100))
+      w.u16(Math.round((s.velocityMs ?? 0) * 1000))
     }
   }
 
@@ -267,11 +273,12 @@ export function buildWorkoutFit(summary) {
     [1,   1, B.ENUM],   // event_type
     [2,   4, B.UINT32], // start_time
     [7,   4, B.UINT32], // total_elapsed_time
+    [9,   4, B.UINT32], // total_distance (m*100)
     [25,  2, B.UINT16], // message_index
   ])
   w.u8(LOCAL.LAP)
   w.u32(endTs); w.u8(9); w.u8(1); w.u32(startTs)
-  w.u32(Math.round(elapsedMs)); w.u16(0)
+  w.u32(Math.round(elapsedMs)); w.u32(Math.round(totalDistM * 100)); w.u16(0)
 
   writeDef(w, LOCAL.SESSION, GMSG.SESSION, [
     [253, 4, B.UINT32], // timestamp
@@ -281,6 +288,7 @@ export function buildWorkoutFit(summary) {
     [5,   1, B.ENUM],   // sport
     [6,   1, B.ENUM],   // sub_sport
     [7,   4, B.UINT32], // total_elapsed_time
+    [9,   4, B.UINT32], // total_distance (m*100)
     [17,  1, B.UINT8],  // avg_heart_rate
     [19,  1, B.UINT8],  // avg_cadence
     [20,  2, B.UINT16], // avg_power
@@ -289,7 +297,7 @@ export function buildWorkoutFit(summary) {
   w.u32(endTs); w.u8(9); w.u8(1); w.u32(startTs)
   w.u8(2)   // sport: cycling
   w.u8(6)   // sub_sport: indoor_cycling
-  w.u32(Math.round(elapsedMs))
+  w.u32(Math.round(elapsedMs)); w.u32(Math.round(totalDistM * 100))
   w.u8(avgHR); w.u8(avgCadence); w.u16(avgPowerW)
 
   writeDef(w, LOCAL.ACTIVITY, GMSG.ACTIVITY, [

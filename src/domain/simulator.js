@@ -64,6 +64,13 @@ export class RideSimulator {
 
   get isFinished() { return this.#s.distanceM >= this.#route.totalDistanceM }
 
+  getSimState() { return { ...this.#s } }
+
+  restoreSimState({ distanceM, velocityMs, elapsedSec, elevationGainM }) {
+    this.#s      = { distanceM, velocityMs, elapsedSec, elevationGainM }
+    this.#paused = true
+  }
+
   pause()  { this.#paused = true  }
   resume() { this.#paused = false }
 

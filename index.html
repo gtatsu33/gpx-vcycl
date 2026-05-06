@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#1e5285" />
+  <meta name="theme-color" content="#19222e" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,15 +13,15 @@
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
-  <title>Virtual Cycling</title>
+  <title>gpx-vcycl</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     [hidden] { display: none !important; }
 
     body {
       font-family: system-ui, sans-serif;
-      background: #102030;
-      color: #eee;
+      background: #111820;
+      color: #ccd8e4;
       height: 100dvh;
       display: flex;
       flex-direction: column;
@@ -33,34 +33,35 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.5rem 1rem 0;
+      padding: 0.5rem 1rem;
       flex-shrink: 0;
+      border-bottom: 2px solid #38bdf8;
     }
-    #app-header h1 { font-size: 1.3rem; color: #e94560; }
-    #db-status { font-size: 0.7rem; color: #444; }
-    #db-status.ready { color: #4caf50; }
-    #db-status.error { color: #f44336; }
+    #app-header h1 { font-size: 1.3rem; color: #ffffff; letter-spacing: 0.04em; }
+    #db-status { font-size: 0.7rem; color: #4a6070; }
+    #db-status.ready { color: #34d399; }
+    #db-status.error { color: #f87171; }
 
     /* ── Tab bar ── */
     #tab-bar {
       display: flex;
       padding: 0.4rem 1rem 0;
       flex-shrink: 0;
-      border-bottom: 1px solid #1e5285;
+      border-bottom: 1px solid #2c4055;
     }
     .tab-btn {
       padding: 0.35rem 1.5rem;
       font-size: 0.875rem;
       background: transparent;
-      color: #555;
+      color: #6080a0;
       border: 1px solid transparent;
       border-bottom: none;
       border-radius: 7px 7px 0 0;
       cursor: pointer;
       flex: none;
     }
-    .tab-btn:hover:not(.active) { color: #aaa; }
-    .tab-btn.active { background: #1e5285; color: #eee; border-color: #1e5285; }
+    .tab-btn:hover:not(.active) { color: #ccd8e4; }
+    .tab-btn.active { background: #212f3d; color: #ccd8e4; border-color: #2c4055; }
 
     /* ── Tab content ── */
     .tab-content { display: none; flex: 1; min-height: 0; }
@@ -70,13 +71,13 @@
     button {
       padding: 0.5rem 1rem;
       font-size: 0.875rem;
-      background: #1e5285;
-      color: #eee;
-      border: 1px solid #e94560;
+      background: #19222e;
+      color: #ccd8e4;
+      border: 1px solid #2c4055;
       border-radius: 7px;
       cursor: pointer;
     }
-    button:hover:not(:disabled) { background: #1a3252; }
+    button:hover:not(:disabled) { background: #212f3d; }
     button:disabled { opacity: 0.3; cursor: default; }
 
     /* ── Device tab ── */
@@ -91,10 +92,10 @@
     }
     #active-power-value {
       font-size: 4.5rem; font-weight: 700; font-variant-numeric: tabular-nums;
-      color: #e94560; line-height: 1; min-width: 4ch; text-align: center;
+      color: #ffffff; line-height: 1; min-width: 4ch; text-align: center;
     }
-    .active-power-unit { font-size: 1.25rem; color: #666; }
-    #active-power-source { font-size: 0.75rem; color: #555; margin-top: 0.125rem; }
+    .active-power-unit { font-size: 1.25rem; color: #6080a0; }
+    #active-power-source { font-size: 0.75rem; color: #6080a0; margin-top: 0.125rem; }
 
     #devices {
       display: flex; gap: 0.875rem; flex-wrap: wrap;
@@ -102,40 +103,40 @@
     }
     .device-card {
       flex: 1; min-width: 220px; max-width: 320px;
-      background: #1a3252; border: 1px solid #1e5285;
+      background: #212f3d; border: 1px solid #2c4055;
       border-radius: 12px; padding: 1rem;
       display: flex; flex-direction: column; gap: 0.75rem;
     }
     .device-card h3 {
-      font-size: 0.875rem; color: #888;
+      font-size: 0.875rem; color: #6080a0;
       text-transform: uppercase; letter-spacing: 0.08em;
     }
     .status-badge {
       display: inline-block; padding: 0.15rem 0.75rem;
-      border-radius: 999px; font-size: 0.8rem; background: #222; color: #555;
+      border-radius: 999px; font-size: 0.8rem; background: #111820; color: #6080a0;
     }
-    .status-badge.connected  { background: #0d2e0d; color: #4caf50; }
+    .status-badge.connected  { background: #0a2218; color: #34d399; }
     .status-badge.connecting { background: #0d1e3a; color: #64b5f6; }
     .metrics { display: flex; gap: 0.625rem; }
     .metric-card {
       flex: 1; display: flex; flex-direction: column; align-items: center;
-      background: #102030; border: 1px solid #1e3a6e;
+      background: #111820; border: 1px solid #2c4055;
       border-radius: 8px; padding: 0.625rem 0.25rem 0.5rem;
     }
     .metric-value {
       font-size: 1.75rem; font-weight: 700; font-variant-numeric: tabular-nums;
-      color: #e94560; min-width: 3.5ch; text-align: center; line-height: 1;
+      color: #ffffff; min-width: 3.5ch; text-align: center; line-height: 1;
     }
     .metric-label {
-      font-size: 0.65rem; color: #555; margin-top: 0.25rem;
+      font-size: 0.65rem; color: #6080a0; margin-top: 0.25rem;
       text-transform: uppercase; letter-spacing: 0.05em;
     }
     .card-buttons { display: flex; gap: 0.5rem; }
     .card-buttons button { flex: 1; }
 
     #ble-log {
-      font-family: monospace; font-size: 0.7rem; color: #555;
-      background: #0c1a2e; border: 1px solid #162840; border-radius: 6px;
+      font-family: monospace; font-size: 0.7rem; color: #6080a0;
+      background: #0a0c10; border: 1px solid #1a2535; border-radius: 6px;
       padding: 0.5rem 0.75rem; width: 100%; max-width: 960px;
       height: 5rem; overflow-y: auto; white-space: pre-wrap;
     }
@@ -147,14 +148,14 @@
     #route-main {
       flex: 1; min-height: 0;
       display: flex;
-      flex-direction: row; /* landscape: side panel | map */
+      flex-direction: row;
     }
 
     /* Side panel: pre-ride or HUD */
     #route-side-panel {
       flex: 1; min-width: 0;
-      background: #0c1a2e;
-      border-right: 1px solid #1e5285;
+      background: #19222e;
+      border-right: 1px solid #2c4055;
       display: flex; flex-direction: column;
       overflow-y: auto;
     }
@@ -170,27 +171,27 @@
       display: flex; flex-direction: column; gap: 0.35rem;
       flex: 1; overflow-y: auto; min-height: 0;
     }
-    .route-empty { font-size: 0.8rem; color: #555; }
+    .route-empty { font-size: 0.8rem; color: #6080a0; }
     .route-item {
       display: flex; align-items: center; gap: 0.4rem;
-      background: #1a3252; border: 1px solid #1e5285;
+      background: #212f3d; border: 1px solid #2c4055;
       border-radius: 7px; padding: 0.4rem 0.6rem; cursor: pointer; flex-shrink: 0;
     }
-    .route-item:hover   { border-color: #4488ff; }
-    .route-item.selected { border-color: #e94560; background: #1a2552; }
+    .route-item:hover   { border-color: #38bdf8; }
+    .route-item.selected { border-color: #38bdf8; background: #0d2436; }
     .route-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
     .route-name { font-size: 0.85rem; font-weight: 600; }
-    .route-meta { font-size: 0.7rem; color: #888; }
+    .route-meta { font-size: 0.7rem; color: #6080a0; }
     .route-delete-btn { flex: none; padding: 0.2rem 0.5rem; font-size: 0.7rem; }
     .reverse-label {
       display: flex; align-items: center; gap: 0.25rem;
-      font-size: 0.7rem; color: #888; cursor: pointer; flex: none; white-space: nowrap;
+      font-size: 0.7rem; color: #6080a0; cursor: pointer; flex: none; white-space: nowrap;
     }
-    .reverse-label input { accent-color: #e94560; cursor: pointer; }
+    .reverse-label input { accent-color: #38bdf8; cursor: pointer; }
 
     #elevation-profile, #gradient-profile {
       width: 100%; height: 52px; flex-shrink: 0;
-      background: #0c1a2e; border-radius: 4px;
+      background: #0a0c10; border-radius: 4px;
     }
     #start-ride-btn { flex-shrink: 0; }
 
@@ -208,24 +209,25 @@
       align-content: stretch;
     }
     .hud-item {
-      background: #1a3252; border: 1px solid #1e5285;
+      background: #212f3d; border: 1px solid #2c4055;
       border-radius: 8px; padding: 0.5rem 0.5rem;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: background 0.4s, border-color 0.4s;
     }
     .hud-item.full-width { grid-column: 1 / 3; }
     .hud-value {
       font-size: 2.2rem; font-weight: 700;
       font-variant-numeric: tabular-nums;
-      color: #e94560; line-height: 1;
+      color: #ffffff; line-height: 1;
     }
-    .hud-unit  { font-size: 0.7rem; color: #999; text-transform: uppercase; }
-    .hud-label { font-size: 0.72rem; color: #aaa; margin-top: 0.15rem; }
-    #hud-remaining { font-size: 0.72rem; color: #888; margin-top: 0.1rem; }
+    .hud-unit  { font-size: 0.7rem; color: #6080a0; text-transform: uppercase; }
+    .hud-label { font-size: 0.72rem; color: #6080a0; margin-top: 0.15rem; }
+    #hud-remaining { font-size: 0.72rem; color: #6080a0; margin-top: 0.1rem; }
 
     #hud-finish-msg {
-      text-align: center; color: #4caf50;
+      text-align: center; color: #34d399;
       font-size: 1.1rem; font-weight: 700; padding: 0.5rem;
-      background: #0d2e0d; border-radius: 8px;
+      background: #0a2218; border-radius: 8px;
     }
 
     /* Map */
@@ -233,8 +235,8 @@
 
     #recenter-btn {
       position: absolute; right: 14px; top: 14px; z-index: 900;
-      background: rgba(13,13,26,0.85); border: 1px solid #1e5285;
-      color: #eee; border-radius: 10px; padding: 10px 12px;
+      background: rgba(10,12,16,0.85); border: 1px solid #2c4055;
+      color: #ccd8e4; border-radius: 10px; padding: 10px 12px;
       cursor: pointer; line-height: 0;
     }
     #recenter-btn:active { opacity: 0.7; }
@@ -243,37 +245,37 @@
     #ride-controls {
       flex-shrink: 0;
       display: flex; gap: 0.75rem; padding: 0.5rem 0.75rem;
-      background: #0c1a2e; border-top: 1px solid #1e5285;
+      background: #19222e; border-top: 1px solid #2c4055;
     }
     #ride-controls button { flex: 1; max-width: 200px; }
-    .btn-warning { border-color: #ff6348 !important; color: #ff6348 !important; }
+    .btn-warning { border-color: #fbbf24 !important; color: #fbbf24 !important; }
 
     /* Ride history */
     .ride-item {
       display: flex; align-items: center; gap: 0.5rem;
-      background: #1a3252; border: 1px solid #1e5285;
+      background: #212f3d; border: 1px solid #2c4055;
       border-radius: 7px; padding: 0.5rem 0.75rem; flex-shrink: 0;
     }
     .ride-info { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
     .ride-name { font-size: 0.85rem; font-weight: 600; }
-    .ride-meta { font-size: 0.7rem; color: #888; }
+    .ride-meta { font-size: 0.7rem; color: #6080a0; }
     .ride-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
     .small-btn { padding: 0.25rem 0.6rem; font-size: 0.7rem; }
     .strava-link { color: #FC4C02; font-size: 0.7rem; text-decoration: none; margin-left: 0.4rem; }
-    .status-badge.uploaded { background: #0d2e0d; color: #4caf50; }
-    .status-badge.pending  { background: #222; color: #888; }
-    .status-badge.failed   { background: #2e0d0d; color: #f44336; }
+    .status-badge.uploaded { background: #0a2218; color: #34d399; }
+    .status-badge.pending  { background: #111820; color: #6080a0; }
+    .status-badge.failed   { background: #2e0d0d; color: #f87171; }
 
     /* Ride end modal */
     .summary-grid { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.5rem; }
-    .summary-row  { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 0.2rem 0; border-bottom: 1px solid #162840; }
-    .ride-end-status       { font-size: 0.8rem; color: #888; min-height: 1.2em; }
-    .ride-end-status.error { color: #f44336; }
+    .summary-row  { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 0.2rem 0; border-bottom: 1px solid #1a2a3a; }
+    .ride-end-status       { font-size: 0.8rem; color: #6080a0; min-height: 1.2em; }
+    .ride-end-status.error { color: #f87171; }
 
     /* Course elevation map (full width, between route-main and ride-controls) */
     #course-elevation-map {
       width: 100%; height: 52px; flex-shrink: 0;
-      background: #0c1a2e; border-top: 1px solid #1e5285;
+      background: #0a0c10; border-top: 1px solid #2c4055;
     }
 
     /* Portrait fallback */
@@ -281,7 +283,7 @@
       #route-main { flex-direction: column; }
       #route-side-panel {
         width: 100%; max-height: 45dvh;
-        border-right: none; border-bottom: 1px solid #1e5285;
+        border-right: none; border-bottom: 1px solid #2c4055;
       }
     }
 
@@ -293,37 +295,37 @@
     }
     .modal-overlay.open { display: flex; }
     .modal {
-      background: #1a3252; border: 1px solid #1e5285;
+      background: #212f3d; border: 1px solid #2c4055;
       border-radius: 12px; padding: 1.5rem;
       min-width: 280px; max-width: min(480px, 92vw); max-height: 90dvh;
       display: flex; flex-direction: column; gap: 1rem;
       overflow-y: auto;
     }
-    .modal h2 { color: #e94560; font-size: 1.1rem; }
+    .modal h2 { color: #ffffff; font-size: 1.1rem; }
     .modal input[type="text"], .modal input[type="number"] {
       width: 100%; padding: 0.45rem 0.7rem;
-      background: #0c1a2e; border: 1px solid #1e5285;
-      border-radius: 6px; color: #eee; font-size: 0.95rem;
+      background: #0a0c10; border: 1px solid #2c4055;
+      border-radius: 6px; color: #ccd8e4; font-size: 0.95rem;
     }
-    .modal input:focus { outline: none; border-color: #4488ff; }
+    .modal input:focus { outline: none; border-color: #38bdf8; }
     .modal-buttons { display: flex; gap: 0.5rem; }
     .modal-buttons button { flex: 1; }
 
     .settings-group { display: flex; flex-direction: column; gap: 0.5rem; }
-    .settings-label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.06em; }
+    .settings-label { font-size: 0.75rem; color: #6080a0; text-transform: uppercase; letter-spacing: 0.06em; }
     .radio-label {
       display: flex; align-items: center; gap: 0.5rem;
       font-size: 0.9rem; cursor: pointer;
     }
-    .radio-label input { accent-color: #e94560; }
+    .radio-label input { accent-color: #38bdf8; }
 
     .settings-row {
       display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
     }
     .settings-row label { font-size: 0.875rem; flex: 1; }
     .settings-row input[type="number"] { width: 5rem; flex: none; text-align: right; }
-    .settings-row input[type="range"]  { flex: 1; accent-color: #e94560; }
-    .settings-row .range-val { font-size: 0.8rem; color: #aaa; min-width: 3.5rem; text-align: right; }
+    .settings-row input[type="range"]  { flex: 1; accent-color: #38bdf8; }
+    .settings-row .range-val { font-size: 0.8rem; color: #ccd8e4; min-width: 3.5rem; text-align: right; }
 
     /* ── Workout tab ── */
     #tab-workout { flex-direction: column; overflow: hidden; }
@@ -332,7 +334,7 @@
       flex: 1; min-height: 0; overflow-y: auto;
       display: flex; flex-direction: column;
       padding: 0.75rem; gap: 0.5rem;
-      background: #0c1a2e;
+      background: #19222e;
     }
     #zwo-list {
       display: flex; flex-direction: column; gap: 0.35rem;
@@ -340,16 +342,16 @@
     }
     .zwo-item {
       display: flex; align-items: center; gap: 0.5rem;
-      background: #1a3252; border: 1px solid #1e5285;
+      background: #212f3d; border: 1px solid #2c4055;
       border-radius: 7px; padding: 0.4rem 0.6rem; cursor: pointer; flex-shrink: 0;
     }
-    .zwo-item:hover   { border-color: #4488ff; }
-    .zwo-item.selected { border-color: #e94560; background: #1a2552; }
+    .zwo-item:hover   { border-color: #38bdf8; }
+    .zwo-item.selected { border-color: #38bdf8; background: #0d2436; }
     .zwo-info { flex: 1; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
     .zwo-name { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .zwo-meta { font-size: 0.7rem; color: #888; flex-shrink: 0; }
-    .zwo-mini-profile { width: 120px; height: 30px; flex-shrink: 0; border-radius: 3px; background: #102030; }
-    #workout-profile-svg { width: 100%; height: 80px; flex-shrink: 0; background: #102030; border-radius: 4px; }
+    .zwo-meta { font-size: 0.7rem; color: #6080a0; flex-shrink: 0; }
+    .zwo-mini-profile { width: 120px; height: 30px; flex-shrink: 0; border-radius: 3px; background: #0a0c10; }
+    #workout-profile-svg { width: 100%; height: 80px; flex-shrink: 0; background: #0a0c10; border-radius: 4px; }
 
     /* Workout running layout */
     #workout-run-panel {
@@ -360,8 +362,8 @@
       flex: 1; min-height: 0; display: flex; flex-direction: row;
     }
     #workout-hud-panel {
-      flex: 1; min-width: 0; background: #0c1a2e;
-      border-right: 1px solid #1e5285;
+      flex: 1; min-width: 0; background: #19222e;
+      border-right: 1px solid #2c4055;
       display: flex; flex-direction: column;
       padding: 0.75rem; gap: 0.5rem; overflow-y: auto;
     }
@@ -370,7 +372,7 @@
       gap: 0.5rem; flex: 1; min-height: 0; align-content: start;
     }
     #workout-seg-panel {
-      flex: 1; min-width: 0; background: #0a1520;
+      flex: 1; min-width: 0; background: #0a0c10;
       display: flex; flex-direction: column;
       overflow: hidden;
     }
@@ -391,38 +393,43 @@
       padding: 0.75rem 0.75rem;
       filter: brightness(1.15);
     }
-    #workout-progress-svg {
-      width: 100%; height: 56px; flex-shrink: 0;
-      background: #0c1a2e; border-top: 1px solid #1e5285;
+    #workout-progress-wrap {
+      position: relative; flex-shrink: 0;
+      background: #0a0c10; border-top: 1px solid #2c4055;
+    }
+    #workout-progress-svg { width: 100%; height: 56px; display: block; }
+    #workout-total-time {
+      position: absolute; right: 6px; bottom: 3px;
+      font-size: 0.72rem; font-variant-numeric: tabular-nums;
+      color: rgba(255,255,255,0.6); pointer-events: none;
     }
     #workout-controls {
       flex-shrink: 0; display: flex; gap: 0.75rem;
-      padding: 0.5rem 0.75rem; background: #0c1a2e;
-      border-top: 1px solid #1e5285;
+      padding: 0.5rem 0.75rem; background: #19222e;
+      border-top: 1px solid #2c4055;
     }
     #workout-controls button { flex: 1; max-width: 200px; }
-    #wo-hud-remaining { font-size: 0.72rem; color: #888; margin-top: 0.1rem; }
+    #wo-hud-remaining { font-size: 0.72rem; color: #6080a0; margin-top: 0.1rem; }
 
-    /* Workout HUD values: white by default, red on alert */
-    .wo-val { color: #fff !important; }
-    .wo-val.alert { color: #e94560 !important; }
+    /* Workout HUD values: white; alert in amber */
+    .wo-val { color: #ffffff !important; }
+    .wo-val.alert { color: #fbbf24 !important; }
 
     #wo-alert-msg {
       min-height: 1.4em; font-size: 0.8rem; font-weight: 600;
-      color: #e94560; text-align: center; padding: 0.2rem 0;
+      color: #fbbf24; text-align: center; padding: 0.2rem 0;
     }
-
 
     @media (orientation: portrait) {
       #workout-main { flex-direction: column; }
-      #workout-hud-panel { border-right: none; border-bottom: 1px solid #1e5285; max-height: 40dvh; }
+      #workout-hud-panel { border-right: none; border-bottom: 1px solid #2c4055; max-height: 40dvh; }
     }
   </style>
 </head>
 <body>
 
   <div id="app-header">
-    <h1>Virtual Cycling</h1>
+    <h1>gpx-vcycl</h1>
     <p id="db-status">DB初期化中...</p>
   </div>
 
@@ -623,25 +630,25 @@
         <!-- Left: HUD -->
         <div id="workout-hud-panel">
           <div class="wo-hud-grid">
-            <div class="hud-item">
+            <div class="hud-item" id="wo-hud-power-item">
               <span class="hud-value wo-val" id="wo-hud-power">--</span>
               <span class="hud-unit">W</span>
               <span class="hud-label">パワー（実測）</span>
             </div>
-            <div class="hud-item">
+            <div class="hud-item" id="wo-hud-target-item">
               <span class="hud-value wo-val" id="wo-hud-target">--</span>
               <span class="hud-unit">W</span>
-              <span class="hud-label">ターゲット</span>
+              <span class="hud-label">パワー（ターゲット）</span>
             </div>
             <div class="hud-item">
               <span class="hud-value wo-val" id="wo-hud-cadence">--</span>
               <span class="hud-unit">rpm</span>
-              <span class="hud-label">ケイデンス</span>
+              <span class="hud-label">ケイデンス（実測）</span>
             </div>
             <div class="hud-item">
               <span class="hud-value wo-val" id="wo-hud-target-cadence">FREE</span>
               <span class="hud-unit">rpm</span>
-              <span class="hud-label">目標ケイデンス</span>
+              <span class="hud-label">ケイデンス（ターゲット）</span>
             </div>
             <div class="hud-item">
               <span class="hud-value wo-val" id="wo-hud-hr">--</span>
@@ -653,6 +660,16 @@
               <span class="hud-unit">&nbsp;</span>
               <span class="hud-label">経過時間</span>
               <span id="wo-hud-remaining">残り--</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-distance">0.00</span>
+              <span class="hud-unit">km</span>
+              <span class="hud-label">距離（仮想）</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-value wo-val" id="wo-hud-speed">0.0</span>
+              <span class="hud-unit">km/h</span>
+              <span class="hud-label">速度（仮想）</span>
             </div>
           </div>
           <div id="wo-alert-msg"></div>
@@ -666,7 +683,10 @@
       </div><!-- #workout-main -->
 
       <!-- Full-width progress chart -->
-      <svg id="workout-progress-svg" viewBox="0 0 1000 56" preserveAspectRatio="none"></svg>
+      <div id="workout-progress-wrap">
+        <svg id="workout-progress-svg" viewBox="0 0 1000 56" preserveAspectRatio="none"></svg>
+        <span id="workout-total-time"></span>
+      </div>
 
       <!-- Controls -->
       <div id="workout-controls">
@@ -688,6 +708,14 @@
   <div id="modal-overlay" class="modal-overlay">
     <div class="modal">
       <h2>Settings</h2>
+
+      <div class="settings-group">
+        <p class="settings-label">Strava連携</p>
+        <p id="strava-status" style="font-size:0.8rem;color:#6080a0;">確認中...</p>
+        <button id="strava-connect-btn">Stravaに接続</button>
+        <button id="strava-disconnect-btn" hidden>Strava接続を解除</button>
+        <p style="font-size:0.7rem;color:#6080a0;margin-top:0.2rem;">※ 接続するとページ遷移が発生しBLE接続が切れます。走行前に設定してください。</p>
+      </div>
 
       <div class="settings-group">
         <p class="settings-label">パワーソース</p>
@@ -748,20 +776,13 @@
         <label class="radio-label">
           <input type="checkbox" id="trainer-control-toggle"> 勾配に応じた負荷制御を有効化
         </label>
-        <p style="font-size:0.7rem;color:#666;margin-top:0.2rem;">要FTMS接続。OFFの場合は勾配送信しない（デフォルト: ON）</p>
+        <p style="font-size:0.7rem;color:#6080a0;margin-top:0.2rem;">要FTMS接続。OFFの場合は勾配送信しない（デフォルト: ON）</p>
         <div class="settings-row" style="margin-top:0.4rem;">
           <label for="trainer-difficulty-input">負荷強度 (Trainer Difficulty)</label>
           <input type="range" id="trainer-difficulty-input" min="0.4" max="1.0" step="0.1" value="0.5" />
           <span class="range-val" id="trainer-difficulty-val">0.5</span>
         </div>
-        <p style="font-size:0.7rem;color:#666;">ローラーへの勾配 = GPX勾配 × この値（デフォルト: 0.5）</p>
-      </div>
-
-      <div class="settings-group">
-        <p class="settings-label">Strava連携</p>
-        <p id="strava-status" style="font-size:0.8rem;color:#888;">確認中...</p>
-        <button id="strava-connect-btn">Stravaに接続</button>
-        <button id="strava-disconnect-btn" hidden>Strava接続を解除</button>
+        <p style="font-size:0.7rem;color:#6080a0;">ローラーへの勾配 = GPX勾配 × この値（デフォルト: 0.5）</p>
       </div>
 
       <button id="modal-close">閉じる</button>
@@ -781,7 +802,7 @@
       <div class="modal-buttons" style="flex-direction:column; gap:0.5rem;">
         <button id="ride-end-upload-btn">Stravaにアップロード</button>
         <button id="ride-end-save-btn">保存のみ（後でアップロード）</button>
-        <button id="ride-end-discard-btn" style="background:transparent;border-color:#555;color:#888;">破棄</button>
+        <button id="ride-end-discard-btn" style="background:transparent;border-color:#2c4055;color:#6080a0;">破棄</button>
       </div>
     </div>
   </div>
@@ -790,10 +811,10 @@
   <div id="strava-warning-overlay" class="modal-overlay">
     <div class="modal">
       <h2>Strava 未接続</h2>
-      <p style="font-size:0.9rem;color:#bbb;">Stravaに接続していません。このままライドを開始した場合、データがStravaに自動アップロードされません。</p>
+      <p style="font-size:0.9rem;color:#ccd8e4;">Stravaに接続していません。このままライドを開始した場合、データがStravaに自動アップロードされません。</p>
       <div class="modal-buttons">
         <button id="strava-warning-cancel">キャンセル</button>
-        <button id="strava-warning-proceed" style="border-color:#f0a500;color:#f0a500;">未接続のまま走行</button>
+        <button id="strava-warning-proceed" style="border-color:#fbbf24;color:#fbbf24;">未接続のまま走行</button>
       </div>
     </div>
   </div>

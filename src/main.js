@@ -13,6 +13,8 @@ import { initWorkoutTab }            from './ui/workoutTab.js'
 import { buildWorkoutFit }           from './export/fitWriter.js'
 import { uploadToStrava }            from './strava/upload.js'
 import { saveRide, markUploaded, markUploadFailed } from './storage/rides.js'
+import { Route }                     from './domain/route.js'
+import { getRoute }                  from './storage/routes.js'
 
 // ── DB status ──────────────────────────────────────────────────────────
 const dbStatusEl = document.getElementById('db-status')
@@ -164,6 +166,21 @@ let hudView         = null
 let rideEndModal    = null
 let isPaused        = false
 
+// ── Route session persistence ───────────────────────────────────────────
+const ROUTE_SESSION_KEY = 'route-session'
+
+function saveRouteSession() {
+  if (!rideController || !selectedRouteId) return
+  const cp = rideController.getCheckpoint()
+  if (!cp) return
+  try { localStorage.setItem(ROUTE_SESSION_KEY, JSON.stringify(cp)) }
+  catch { /* storage full */ }
+}
+
+function clearRouteSession() { localStorage.removeItem(ROUTE_SESSION_KEY) }
+
+window.addEventListener('beforeunload', () => { if (rideController && selectedRouteId) saveRouteSession() })
+
 const startBtn       = document.getElementById('start-ride-btn')
 const pauseResumeBtn = document.getElementById('pause-resume-btn')
 const stopBtn        = document.getElementById('stop-ride-btn')
@@ -207,6 +224,7 @@ startBtn.addEventListener('click', async () => {
   const trainerEnabled     = document.getElementById('trainer-control-toggle').checked
   const trainerDifficulty  = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
 
+  clearRouteSession()
   rideController = new RideController({
     route:      selectedRoute,
     routeId:    selectedRouteId,
@@ -220,6 +238,7 @@ startBtn.addEventListener('click', async () => {
     ftmsClient:  trainerEnabled ? ftmsClient : null,
     onFinished: (summary) => {
       rideController = null
+      clearRouteSession()
       setRidingState(false)
       if (summary) rideEndModal.show(summary)
     },
@@ -238,12 +257,14 @@ pauseResumeBtn.addEventListener('click', () => {
     rideController.pause()
     isPaused = true
     pauseResumeBtn.textContent = '▶ 再開'
+    saveRouteSession()
   }
 })
 
 stopBtn.addEventListener('click', () => {
   const summary = rideController?.stop()
   rideController = null
+  clearRouteSession()
   setRidingState(false)
   if (summary) rideEndModal.show(summary)
 })
@@ -274,15 +295,17 @@ async function init() {
   }
 
   // Strava OAuth コールバック処理（リダイレクトで戻ってきた場合）
-  const params = new URLSearchParams(window.location.search)
-  const code   = params.get('code')
-  if (code && params.get('scope')?.includes('activity')) {
+  let stravaJustConnected = false
+  const cbParams = new URLSearchParams(window.location.search)
+  const cbCode   = cbParams.get('code')
+  if (cbCode && (cbParams.get('scope') ?? '').includes('activity')) {
     try {
-      await exchangeCode(code)
-      history.replaceState({}, '', window.location.pathname)
+      await exchangeCode(cbCode)
+      stravaJustConnected = true
     } catch (err) {
       console.error('Strava auth failed:', err)
     }
+    history.replaceState({}, '', window.location.pathname)
   }
 
   const result = await initDeviceManager()
@@ -309,10 +332,56 @@ async function init() {
     getLiveData,
     ftmsClient,
     getFtpW,
+    getPhysicsParams: loadPhysicsParams,
     onWorkoutEnd: (summary) => showWorkoutEndModal(summary),
   })
 
   await loadSettings()
+
+  // ルートセッション復元
+  try {
+    const routeSession = JSON.parse(localStorage.getItem(ROUTE_SESSION_KEY))
+    if (routeSession) {
+      const record = await getRoute(routeSession.routeId)
+      if (record) {
+        const route              = Route.fromGpx(record.gpxText)
+        const params             = await loadPhysicsParams()
+        const smoothingWindowSec = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
+        const trainerEnabled     = document.getElementById('trainer-control-toggle').checked
+        const trainerDifficulty  = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
+
+        selectedRoute     = route
+        selectedRouteId   = routeSession.routeId
+        selectedRouteName = routeSession.routeName
+        startBtn.disabled = false
+
+        rideController = new RideController({
+          route, routeId: routeSession.routeId, routeName: routeSession.routeName,
+          params, mapView, hudView, getLiveData, smoothingWindowSec, trainerDifficulty,
+          ftmsClient: trainerEnabled ? ftmsClient : null,
+          onFinished: (summary) => {
+            rideController = null
+            clearRouteSession()
+            setRidingState(false)
+            if (summary) rideEndModal.show(summary)
+          },
+        })
+        rideController.restoreFrom(routeSession)
+
+        document.querySelector('.tab-btn[data-tab="route"]')?.click()
+        setRidingState(true)
+        isPaused = true
+        pauseResumeBtn.textContent = '▶ 再開（中断から復元）'
+      } else {
+        clearRouteSession()
+      }
+    }
+  } catch (err) {
+    console.error('Route session restore failed:', err)
+    clearRouteSession()
+  }
+
+  if (stravaJustConnected) showToast('Strava接続完了。デバイスを再接続してください。', 7000)
 }
 
 // ── Workout end modal ──────────────────────────────────────────────────────────
@@ -334,12 +403,14 @@ function showWorkoutEndModal(summary) {
     ? Math.round(summary.samples.reduce((s, x) => s + x.heartRateBpm, 0) / summary.samples.length)
     : 0
 
+  const distKm = ((summary.samples.at(-1)?.distanceM ?? 0) / 1000).toFixed(2)
   summaryEl.innerHTML = `
+    <div class="summary-row"><span>距離（仮想）</span><span>${distKm} km</span></div>
     <div class="summary-row"><span>時間</span><span>${fmtTimeS(elapsedS)}</span></div>
     <div class="summary-row"><span>平均パワー</span><span>${avgPower} W</span></div>
     <div class="summary-row"><span>平均心拍</span><span>${avgHR > 0 ? avgHR + ' bpm' : '--'}</span></div>
   `
-  nameInput.value = 'ワークアウト'
+  nameInput.value = summary.workoutName ? `gpx-vcycl workout : ${summary.workoutName}` : 'gpx-vcycl workout'
   statusEl.textContent = ''
   statusEl.className   = 'ride-end-status'
   overlay.classList.add('open')
@@ -349,7 +420,7 @@ function showWorkoutEndModal(summary) {
   const setLoading = (on) => { uploadBtn.disabled = saveBtn.disabled = discardBtn.disabled = on }
 
   uploadBtn.onclick = async () => {
-    const name = nameInput.value.trim() || 'ワークアウト'
+    const name = nameInput.value.trim() || 'gpx-vcycl workout'
     setLoading(true)
     statusEl.textContent = '保存中...'; statusEl.className = 'ride-end-status'
     let rideId
@@ -376,12 +447,21 @@ function showWorkoutEndModal(summary) {
   }
 
   saveBtn.onclick = async () => {
-    await saveRide({ ...summary, routeName: nameInput.value.trim() || 'ワークアウト' })
+    await saveRide({ ...summary, routeName: nameInput.value.trim() || 'gpx-vcycl workout' })
     renderRideHistory()
     close()
   }
 
   discardBtn.onclick = close
+}
+
+function showToast(msg, durationMs = 4000) {
+  const el = Object.assign(document.createElement('div'), {
+    textContent: msg,
+    style: 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:#212f3d;color:#ccd8e4;border:1px solid #38bdf8;border-radius:8px;padding:0.6rem 1.2rem;font-size:0.875rem;z-index:9999;pointer-events:none;',
+  })
+  document.body.appendChild(el)
+  setTimeout(() => el.remove(), durationMs)
 }
 
 function fmtTimeS(totalSec) {

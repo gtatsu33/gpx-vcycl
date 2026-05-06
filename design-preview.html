@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Design Preview — Virtual Cycling</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #0e0e0e; color: #eee; padding: 1.5rem; }
+h1 { font-size: 1.2rem; color: #aaa; margin-bottom: 0.25rem; }
+p.desc { font-size: 0.82rem; color: #555; margin-bottom: 1.5rem; }
+section { margin-bottom: 2.5rem; }
+section > h2 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em; color: #444; margin-bottom: 0.6rem; }
+section > p.note { font-size: 0.78rem; color: #555; margin-bottom: 1rem; }
+hr.divider { border: none; border-top: 1px solid #1a1a1a; margin: 2.5rem 0; }
+
+.swatches { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.swatch { width: 76px; }
+.swatch-box { width: 76px; height: 38px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.07); }
+.swatch-name { font-size: 0.56rem; color: #555; margin-top: 0.2rem; line-height: 1.3; }
+.swatch-hex  { font-size: 0.62rem; font-family: monospace; color: #444; }
+
+.compare { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+.compare-col { flex: 1; min-width: 270px; }
+.compare-col > h3 { font-size: 0.7rem; color: #444; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.6rem; }
+
+/* ── CSS variable themes ── */
+
+.curr-wrap {
+  --bg0: #0c1520; --bg1: #102030; --bg2: #0c1a2e; --bg3: #1a3252;
+  --border: #1e5285;
+  --t0: #e94560; --t1: #eee; --t2: #888;
+  --accent: #e94560; --acc-bg: #1a2552;
+  --ok: #4caf50; --warn: #e94560; --err: #f44336;
+}
+.a-wrap {
+  --bg0: #090e18; --bg1: #0d1829; --bg2: #13243a; --bg3: #192e4a;
+  --border: #1e3d5c;
+  --t0: #ffffff; --t1: #c8d8e8; --t2: #6b90aa;
+  --accent: #29b6f6; --acc-bg: #0c2f45;
+  --ok: #4caf50; --warn: #ffb300; --err: #f44336;
+}
+.aplus-wrap {
+  --bg0: #0a0c10; --bg1: #111820; --bg2: #19222e; --bg3: #212f3d;
+  --border: #2c4055;
+  --t0: #ffffff; --t1: #ccd8e4; --t2: #6080a0;
+  --accent: #38bdf8; --acc-bg: #0d2436;
+  --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+}
+
+/* ── shared components ── */
+
+.x-app {
+  background: var(--bg1); border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.x-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.5rem 1rem; background: var(--bg2);
+  border-bottom: 2px solid var(--accent);
+}
+.x-title { font-size: 1.0rem; color: var(--t0); font-weight: 700; letter-spacing: 0.04em; }
+.x-db { font-size: 0.65rem; color: var(--ok); }
+.x-tabs {
+  display: flex; padding: 0.35rem 1rem 0; background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.x-tab {
+  padding: 0.28rem 0.9rem; font-size: 0.78rem; border-radius: 5px 5px 0 0;
+  background: transparent; color: var(--t2); border: 1px solid transparent;
+  border-bottom: none; cursor: pointer; letter-spacing: 0.02em;
+}
+.x-tab.active { background: var(--bg3); color: var(--t0); border-color: var(--border); }
+.x-body { padding: 0.875rem; display: flex; flex-direction: column; gap: 0.7rem; }
+
+/* device card */
+.x-card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.7rem;
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+.x-card-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--t2); }
+.x-badge { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; font-size: 0.7rem; }
+.x-badge.connected { background: #0d2e0d; color: var(--ok); }
+.x-badge.disconnected { background: var(--bg0); color: var(--t2); }
+.x-metrics { display: flex; gap: 0.35rem; }
+.x-metric {
+  flex: 1; background: var(--bg0); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.4rem 0.2rem;
+  display: flex; flex-direction: column; align-items: center;
+}
+.x-mval { font-size: 1.55rem; font-weight: 700; color: var(--t0); font-variant-numeric: tabular-nums; line-height: 1; }
+.x-mlbl { font-size: 0.58rem; color: var(--t2); text-transform: uppercase; margin-top: 0.15rem; }
+.x-btns { display: flex; gap: 0.35rem; }
+.x-btn {
+  flex: 1; padding: 0.38rem 0.5rem; font-size: 0.76rem;
+  background: var(--bg2); color: var(--t1);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.x-btn.primary { border-color: var(--accent); color: var(--accent); }
+.x-btn:disabled { opacity: 0.28; }
+.x-btn.warn-btn { border-color: var(--warn); color: var(--warn); }
+
+/* big power */
+.x-power-section { text-align: center; padding: 0.4rem 0; }
+.x-power-big { font-size: 3.2rem; font-weight: 700; color: var(--t0); font-variant-numeric: tabular-nums; line-height: 1; }
+.x-power-unit { font-size: 1rem; color: var(--t2); }
+.x-power-src  { font-size: 0.68rem; color: var(--t2); margin-top: 0.1rem; }
+
+/* HUD grid */
+.x-hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+.x-hud-item {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.4rem; display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.x-hud-val  { font-size: 1.7rem; font-weight: 700; color: var(--t0); font-variant-numeric: tabular-nums; line-height: 1; }
+.x-hud-val.accent { color: var(--accent); }
+.x-hud-unit { font-size: 0.6rem; color: var(--t2); text-transform: uppercase; }
+.x-hud-lbl  { font-size: 0.63rem; color: var(--t2); margin-top: 0.1rem; }
+
+/* segment list */
+.x-seg-wrap { background: var(--bg0); border-radius: 6px; overflow: hidden; margin-top: 0.25rem; }
+.x-seg {
+  padding: 0.42rem 0.7rem; font-size: 0.77rem; font-variant-numeric: tabular-nums;
+  border-left: 3px solid transparent; border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--t2); display: flex; justify-content: space-between; align-items: center;
+}
+.x-seg.done { opacity: 0.35; }
+.x-seg.upcoming { color: var(--t1); }
+.x-seg.current {
+  border-left: 5px solid var(--accent);
+  font-weight: 700; font-size: 0.86rem;
+  padding: 0.6rem 0.7rem 0.6rem 0.65rem;
+  background: var(--acc-bg);
+  color: var(--t0);
+}
+.x-seg-name { flex: 1; }
+.x-seg-time { font-size: 0.68rem; color: var(--t2); flex-shrink: 0; margin-left: 0.5rem; }
+.x-seg.current .x-seg-time { color: var(--accent); }
+
+/* alert */
+.x-alert { font-size: 0.76rem; font-weight: 600; color: var(--warn); text-align: center; padding: 0.2rem; }
+
+/* route list */
+.x-route-list { display: flex; flex-direction: column; gap: 0.28rem; }
+.x-route-item {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.4rem 0.6rem; cursor: pointer;
+}
+.x-route-item:hover { border-color: var(--accent); }
+.x-route-item.selected { border-color: var(--accent); background: var(--acc-bg); }
+.x-route-name { font-size: 0.82rem; font-weight: 600; color: var(--t0); }
+.x-route-meta { font-size: 0.66rem; color: var(--t2); }
+
+/* status pills */
+.x-badge-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.x-pill { display: inline-block; padding: 0.12rem 0.65rem; border-radius: 999px; font-size: 0.7rem; }
+.x-pill.ok  { background: rgba(52,211,153,0.12); color: var(--ok); }
+.x-pill.pending { background: var(--bg0); color: var(--t2); }
+.x-pill.err { background: rgba(248,113,113,0.1); color: var(--err); }
+
+/* controls bar */
+.x-controls {
+  display: flex; gap: 0.4rem; padding: 0.5rem 0.875rem;
+  background: var(--bg2); border-top: 1px solid var(--border);
+}
+.x-controls .x-btn { flex: 1; }
+
+/* progress bar */
+.x-prog-bar {
+  height: 4px; background: var(--bg0); margin: 0;
+}
+.x-prog-fill { height: 100%; background: var(--accent); width: 22%; }
+
+/* modal snippet */
+.x-modal {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.875rem; display: flex; flex-direction: column; gap: 0.5rem;
+}
+.x-modal-title { font-size: 0.9rem; font-weight: 600; color: var(--t0); }
+
+/* A+ specific: thin accent line header top */
+.aplus-wrap .x-header { border-bottom-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>Virtual Cycling — Design Preview</h1>
+<p class="desc">上から：現行 → Option A（シアン） → Option A+（カーボンスレート + シアン）</p>
+
+<!-- ════════ CURRENT ════════ -->
+<hr class="divider">
+<section>
+  <h2>現行デザイン（比較用）</h2>
+  <p class="note">紺背景 × 赤文字。数値も赤、ボタン枠も赤、アラートも赤。</p>
+  <div class="compare">
+
+    <div class="compare-col">
+      <h3>Device Tab</h3>
+      <div class="curr-wrap">
+        <div class="x-app">
+          <div class="x-header" style="border-bottom: 1px solid var(--border)">
+            <span class="x-title" style="color:#e94560">Virtual Cycling</span>
+            <span class="x-db">DB Ready</span>
+          </div>
+          <div class="x-tabs">
+            <span class="x-tab active">デバイス</span>
+            <span class="x-tab">ルート</span>
+          </div>
+          <div class="x-body">
+            <div class="x-power-section">
+              <div class="x-power-big" style="color:#e94560">247</div>
+              <div class="x-power-unit">W</div>
+              <div class="x-power-src">Trainer</div>
+            </div>
+            <div class="x-card">
+              <div class="x-card-title">Trainer</div>
+              <span class="x-badge connected">接続済</span>
+              <div class="x-metrics">
+                <div class="x-metric"><span class="x-mval" style="color:#e94560">28.4</span><span class="x-mlbl">km/h</span></div>
+                <div class="x-metric"><span class="x-mval" style="color:#e94560">92</span><span class="x-mlbl">rpm</span></div>
+                <div class="x-metric"><span class="x-mval" style="color:#e94560">247</span><span class="x-mlbl">W</span></div>
+              </div>
+              <div class="x-btns">
+                <button class="x-btn" disabled>接続</button>
+                <button class="x-btn" style="border-color:#e94560;color:#e94560">切断</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-col">
+      <h3>Workout HUD</h3>
+      <div class="curr-wrap">
+        <div class="x-app">
+          <div class="x-body" style="background:var(--bg2)">
+            <div class="x-hud-grid">
+              <div class="x-hud-item"><span class="x-hud-val" style="color:#e94560">00:14:32</span><span class="x-hud-lbl">経過時間</span></div>
+              <div class="x-hud-item"><span class="x-hud-val" style="color:#e94560">01:23:00</span><span class="x-hud-lbl">残り時間</span></div>
+              <div class="x-hud-item"><span class="x-hud-val" style="color:#e94560">247</span><span class="x-hud-unit">W</span><span class="x-hud-lbl">パワー</span></div>
+              <div class="x-hud-item"><span class="x-hud-val" style="color:#e94560">120</span><span class="x-hud-unit">W</span><span class="x-hud-lbl">目標</span></div>
+              <div class="x-hud-item"><span class="x-hud-val" style="color:#e94560">92</span><span class="x-hud-unit">rpm</span><span class="x-hud-lbl">ケイデンス</span></div>
+              <div class="x-hud-item"><span class="x-hud-val" style="color:#e94560">158</span><span class="x-hud-unit">bpm</span><span class="x-hud-lbl">心拍</span></div>
+            </div>
+            <div class="x-alert">⚠ 自動一時停止中 ▶ 再開</div>
+          </div>
+          <div class="x-controls">
+            <button class="x-btn" style="border-color:#e94560;color:#e94560">⏸ 一時停止</button>
+            <button class="x-btn" style="border-color:#e94560;color:#e94560">⏹ 終了</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-col">
+      <h3>Workout Segments</h3>
+      <div class="curr-wrap">
+        <div class="x-app">
+          <div class="x-seg-wrap" style="margin:0.875rem;border-radius:6px">
+            <div class="x-seg done" style="border-left-color:#4a9080;color:#666">
+              <span class="x-seg-name">Z2 ウォームアップ</span><span class="x-seg-time">10:00 · 120W</span>
+            </div>
+            <div class="x-seg current" style="border-left-color:#e94560;background:#2a0d0d;color:#e94560">
+              <span class="x-seg-name">Z3 テンポ走</span><span class="x-seg-time" style="color:#e94560">20:00 · 160W</span>
+            </div>
+            <div class="x-seg upcoming" style="border-left-color:#c07030">
+              <span class="x-seg-name">Z4 閾値</span><span class="x-seg-time">10:00 · 240W</span>
+            </div>
+            <div class="x-seg" style="border-left-color:#902020;color:#666">
+              <span class="x-seg-name">Z5 VO2max</span><span class="x-seg-time">5:00 · 320W</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════ OPTION A ════════ -->
+<hr class="divider">
+<section>
+  <h2>Option A — シアンアクセント（Garmin系）</h2>
+  <p class="note">数値を白に。シアン（#29b6f6）を選択状態・インタラクションのみに使用。アラートはアンバー。背景は現行とほぼ同じ紺系。</p>
+
+  <div class="swatches">
+    <div class="swatch"><div class="swatch-box" style="background:#090e18"></div><div class="swatch-name">bg-0</div><div class="swatch-hex">#090e18</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#0d1829"></div><div class="swatch-name">bg-1 ボディ</div><div class="swatch-hex">#0d1829</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#13243a"></div><div class="swatch-name">bg-2 パネル</div><div class="swatch-hex">#13243a</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#192e4a"></div><div class="swatch-name">bg-3 カード</div><div class="swatch-hex">#192e4a</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#1e3d5c"></div><div class="swatch-name">border</div><div class="swatch-hex">#1e3d5c</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#fff;border-color:#333"></div><div class="swatch-name">text-0 値</div><div class="swatch-hex">#ffffff</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#c8d8e8"></div><div class="swatch-name">text-1 本文</div><div class="swatch-hex">#c8d8e8</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#6b90aa"></div><div class="swatch-name">text-2 補助</div><div class="swatch-hex">#6b90aa</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#29b6f6"></div><div class="swatch-name">accent</div><div class="swatch-hex">#29b6f6</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#4caf50"></div><div class="swatch-name">ok</div><div class="swatch-hex">#4caf50</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#ffb300"></div><div class="swatch-name">warn アラート</div><div class="swatch-hex">#ffb300</div></div>
+  </div>
+
+  <div class="compare">
+    <div class="compare-col">
+      <h3>Device Tab</h3>
+      <div class="a-wrap">
+        <div class="x-app">
+          <div class="x-header" style="border-bottom:1px solid var(--border)">
+            <span class="x-title">Virtual Cycling</span>
+            <span class="x-db">DB Ready</span>
+          </div>
+          <div class="x-tabs">
+            <span class="x-tab active">デバイス</span>
+            <span class="x-tab">ルート</span>
+          </div>
+          <div class="x-body">
+            <div class="x-power-section">
+              <div class="x-power-big">247</div>
+              <div class="x-power-unit">W</div>
+              <div class="x-power-src">Trainer</div>
+            </div>
+            <div class="x-card">
+              <div class="x-card-title">Trainer</div>
+              <span class="x-badge connected">接続済</span>
+              <div class="x-metrics">
+                <div class="x-metric"><span class="x-mval">28.4</span><span class="x-mlbl">km/h</span></div>
+                <div class="x-metric"><span class="x-mval">92</span><span class="x-mlbl">rpm</span></div>
+                <div class="x-metric"><span class="x-mval">247</span><span class="x-mlbl">W</span></div>
+              </div>
+              <div class="x-btns">
+                <button class="x-btn" disabled>接続</button>
+                <button class="x-btn primary">切断</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-col">
+      <h3>Workout HUD</h3>
+      <div class="a-wrap">
+        <div class="x-app">
+          <div class="x-body" style="background:var(--bg2)">
+            <div class="x-hud-grid">
+              <div class="x-hud-item"><span class="x-hud-val">00:14:32</span><span class="x-hud-lbl">経過時間</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">01:23:00</span><span class="x-hud-lbl">残り時間</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">247</span><span class="x-hud-unit">W</span><span class="x-hud-lbl">パワー</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">120</span><span class="x-hud-unit">W</span><span class="x-hud-lbl">目標</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">92</span><span class="x-hud-unit">rpm</span><span class="x-hud-lbl">ケイデンス</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">158</span><span class="x-hud-unit">bpm</span><span class="x-hud-lbl">心拍</span></div>
+            </div>
+            <div class="x-alert">⚠ 自動一時停止中 ▶ 再開</div>
+          </div>
+          <div class="x-controls">
+            <button class="x-btn">⏸ 一時停止</button>
+            <button class="x-btn warn-btn">⏹ 終了</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-col">
+      <h3>Workout Segments</h3>
+      <div class="a-wrap">
+        <div class="x-app">
+          <div class="x-seg-wrap" style="margin:0.875rem;border-radius:6px">
+            <div class="x-seg done" style="border-left-color:#3d8070">
+              <span class="x-seg-name">Z2 ウォームアップ</span><span class="x-seg-time">10:00 · 120W</span>
+            </div>
+            <div class="x-seg current" style="border-left-color:#29b6f6">
+              <span class="x-seg-name">Z3 テンポ走</span><span class="x-seg-time">20:00 · 160W</span>
+            </div>
+            <div class="x-seg upcoming" style="border-left-color:#c07030">
+              <span class="x-seg-name">Z4 閾値</span><span class="x-seg-time">10:00 · 240W</span>
+            </div>
+            <div class="x-seg" style="border-left-color:#902020;color:var(--t2)">
+              <span class="x-seg-name">Z5 VO2max</span><span class="x-seg-time">5:00 · 320W</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ OPTION A+ ════════ -->
+<hr class="divider">
+<section>
+  <h2>Option A+ — カーボンスレート + シアン（推奨）</h2>
+  <p class="note">
+    背景の紺の彩度を落としてスレートグレー寄りに（「水底感」を解消）。ボーダーを少し明るくしてパネルの境界を明確化。
+    シアンをヘッダー下線・現在セグメント・目標W値に使い、「今ここ」を一点集中で示す。アクセント色を意味のある場所にだけ使う設計。
+  </p>
+
+  <div class="swatches">
+    <div class="swatch"><div class="swatch-box" style="background:#0a0c10"></div><div class="swatch-name">bg-0 最暗</div><div class="swatch-hex">#0a0c10</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#111820"></div><div class="swatch-name">bg-1 ボディ</div><div class="swatch-hex">#111820</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#19222e"></div><div class="swatch-name">bg-2 パネル</div><div class="swatch-hex">#19222e</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#212f3d"></div><div class="swatch-name">bg-3 カード</div><div class="swatch-hex">#212f3d</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#2c4055"></div><div class="swatch-name">border</div><div class="swatch-hex">#2c4055</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#fff;border-color:#333"></div><div class="swatch-name">text-0 値</div><div class="swatch-hex">#ffffff</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#ccd8e4"></div><div class="swatch-name">text-1 本文</div><div class="swatch-hex">#ccd8e4</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#6080a0"></div><div class="swatch-name">text-2 補助</div><div class="swatch-hex">#6080a0</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#38bdf8"></div><div class="swatch-name">accent シアン</div><div class="swatch-hex">#38bdf8</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#34d399"></div><div class="swatch-name">ok 接続済</div><div class="swatch-hex">#34d399</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#fbbf24"></div><div class="swatch-name">warn アラート</div><div class="swatch-hex">#fbbf24</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#f87171"></div><div class="swatch-name">err エラーのみ</div><div class="swatch-hex">#f87171</div></div>
+  </div>
+
+  <div class="compare">
+    <div class="compare-col">
+      <h3>Device Tab</h3>
+      <div class="aplus-wrap">
+        <div class="x-app">
+          <div class="x-header">
+            <span class="x-title">Virtual Cycling</span>
+            <span class="x-db">DB Ready</span>
+          </div>
+          <div class="x-tabs">
+            <span class="x-tab active">デバイス</span>
+            <span class="x-tab">ルート</span>
+          </div>
+          <div class="x-body">
+            <div class="x-power-section">
+              <div class="x-power-big">247</div>
+              <div class="x-power-unit">W</div>
+              <div class="x-power-src">Trainer</div>
+            </div>
+            <div class="x-card">
+              <div class="x-card-title">Trainer</div>
+              <span class="x-badge connected">接続済</span>
+              <div class="x-metrics">
+                <div class="x-metric"><span class="x-mval">28.4</span><span class="x-mlbl">km/h</span></div>
+                <div class="x-metric"><span class="x-mval">92</span><span class="x-mlbl">rpm</span></div>
+                <div class="x-metric"><span class="x-mval">247</span><span class="x-mlbl">W</span></div>
+              </div>
+              <div class="x-btns">
+                <button class="x-btn" disabled>接続</button>
+                <button class="x-btn primary">切断</button>
+              </div>
+            </div>
+            <div style="margin-top:0.25rem">
+              <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--t2);margin-bottom:0.3rem">ステータス</div>
+              <div class="x-badge-row">
+                <span class="x-pill ok">接続済</span>
+                <span class="x-pill pending">未接続</span>
+                <span class="x-pill err">接続エラー</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-col">
+      <h3>Workout HUD（目標Wだけシアン）</h3>
+      <div class="aplus-wrap">
+        <div class="x-app">
+          <div class="x-header">
+            <span class="x-title">Virtual Cycling</span>
+            <span class="x-db" style="color:var(--accent)">● RIDE</span>
+          </div>
+          <div class="x-prog-bar"><div class="x-prog-fill"></div></div>
+          <div class="x-body" style="background:var(--bg2)">
+            <div class="x-hud-grid">
+              <div class="x-hud-item"><span class="x-hud-val">00:14:32</span><span class="x-hud-lbl">経過時間</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">01:23:00</span><span class="x-hud-lbl">残り時間</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">247</span><span class="x-hud-unit">W</span><span class="x-hud-lbl">パワー</span></div>
+              <div class="x-hud-item" style="border-color:var(--accent)">
+                <span class="x-hud-val accent">120</span><span class="x-hud-unit" style="color:var(--accent)">W</span><span class="x-hud-lbl" style="color:var(--accent)">目標</span>
+              </div>
+              <div class="x-hud-item"><span class="x-hud-val">92</span><span class="x-hud-unit">rpm</span><span class="x-hud-lbl">ケイデンス</span></div>
+              <div class="x-hud-item"><span class="x-hud-val">158</span><span class="x-hud-unit">bpm</span><span class="x-hud-lbl">心拍</span></div>
+            </div>
+            <div class="x-alert">⚠ 自動一時停止中 ▶ 再開</div>
+          </div>
+          <div class="x-controls">
+            <button class="x-btn">⏸ 一時停止</button>
+            <button class="x-btn warn-btn">⏹ 終了</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-col">
+      <h3>Workout Segments（現在セグメントをシアンで）</h3>
+      <div class="aplus-wrap">
+        <div class="x-app">
+          <div class="x-header">
+            <span class="x-title">Virtual Cycling</span>
+          </div>
+          <div class="x-seg-wrap" style="margin:0.875rem;border-radius:6px">
+            <div class="x-seg done" style="border-left-color:#3d8070">
+              <span class="x-seg-name">Z2 ウォームアップ</span><span class="x-seg-time">10:00 · 120W</span>
+            </div>
+            <div class="x-seg current" style="border-left-color:var(--accent)">
+              <span class="x-seg-name">Z3 テンポ走</span><span class="x-seg-time">20:00 · 160W</span>
+            </div>
+            <div class="x-seg upcoming" style="border-left-color:#d97706">
+              <span class="x-seg-name">Z4 閾値</span><span class="x-seg-time">10:00 · 240W</span>
+            </div>
+            <div class="x-seg upcoming" style="border-left-color:#dc2626">
+              <span class="x-seg-name">Z5 VO2max</span><span class="x-seg-time">5:00 · 320W</span>
+            </div>
+            <div class="x-seg" style="border-left-color:#4d7080;color:var(--t2)">
+              <span class="x-seg-name">クールダウン</span><span class="x-seg-time">10:00 · 80W</span>
+            </div>
+          </div>
+          <div class="x-controls">
+            <button class="x-btn">⏸ 一時停止</button>
+            <button class="x-btn warn-btn">⏹ 終了</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+<section>
+  <h2>Option A+ の変更ポイント（Option A との差分）</h2>
+  <div style="font-size:0.82rem;color:#888;max-width:680px;display:flex;flex-direction:column;gap:0.45rem;line-height:1.6">
+    <div><span style="color:#38bdf8">→</span> 背景の青みを減らしスレートグレー寄りに。「水の底」感が薄れる</div>
+    <div><span style="color:#38bdf8">→</span> ボーダーを #2c4055 に明るくしてパネルの境界を可視化。空間の構造が見えやすくなる</div>
+    <div><span style="color:#38bdf8">→</span> ヘッダー下に 2px シアンライン。アプリの「顔」になる一点</div>
+    <div><span style="color:#38bdf8">→</span> ワークアウト中「目標W」カードだけシアン枠＋シアン文字。他は白。「今何Wを目指すか」が即座にわかる</div>
+    <div><span style="color:#38bdf8">→</span> セグメントの現在行背景は acc-bg（シアンの極薄）。ゾーン色の左ボーダーはそのまま維持</div>
+    <div><span style="color:#38bdf8">→</span> プログレスバー（細い 4px）がシアンで fill。ライド中の進行感を主張せず示す</div>
+    <div><span style="color:#38bdf8">→</span> 接続済バッジをエメラルド（#34d399）に。緑のまま、より明るく清潔</div>
+    <div><span style="color:#38bdf8">→</span> アクセントは <strong style="color:#fff">ヘッダー線・目標値・現在セグメント・プログレスバー</strong> の4箇所のみ。それ以外は白</div>
+  </div>
+</section>
+
+</body>
+</html>

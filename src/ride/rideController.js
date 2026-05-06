@@ -138,6 +138,28 @@ export class RideController {
   get isRunning() { return this.#intervalId !== null }
   get isPaused()  { return this.#paused }
 
+  getCheckpoint() {
+    if (!this.#startedAt) return null
+    const sim = this.#simulator.getSimState()
+    return {
+      routeId:   this.#routeId,
+      routeName: this.#routeName,
+      startedAt: this.#startedAt.getTime(),
+      samples:   [...this.#samples],
+      simState:  { distanceM: sim.distanceM, velocityMs: sim.velocityMs, elapsedSec: sim.elapsedSec, elevationGainM: sim.elevationGainM },
+    }
+  }
+
+  restoreFrom({ startedAt, samples, simState }) {
+    if (this.#intervalId) return
+    this.#startedAt    = new Date(startedAt)
+    this.#samples      = [...samples]
+    this.#lastSampleAt = Date.now()  // 復元直後の不要なサンプル記録を防ぐ
+    this.#simulator.restoreSimState(simState)
+    this.#paused       = true
+    this.#intervalId   = setInterval(() => this.#tick(), TICK_MS)
+  }
+
   #tick() {
     const now = Date.now()
     const { powerW, cadenceRpm, heartRateBpm } = this.#getLiveData()

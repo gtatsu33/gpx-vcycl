@@ -100,7 +100,7 @@ function segLabel(seg, ftpW) {
   switch (seg.type) {
     case 'steady':    return `${w(seg.powerLowFtp)}  ${fmtDurS(seg.durationS)}`
     case 'ramp':      return `${w(seg.powerLowFtp)} → ${w(seg.powerHighFtp)}  ${fmtDurS(seg.durationS)}`
-    case 'intervals': return `${w(seg.onPowerFtp)} / ${w(seg.offPowerFtp)}  ×${seg.repeatCount}  ${fmtDurS(seg.durationS)}`
+    case 'intervals': return `( ${w(seg.onPowerFtp)} ${fmtDurS(seg.onDurationS)} / ${w(seg.offPowerFtp)} ${fmtDurS(seg.offDurationS)} ) ×${seg.repeatCount}  ${fmtDurS(seg.durationS)}`
     case 'free':      return `Free  ${fmtDurS(seg.durationS)}`
     default:          return fmtDurS(seg.durationS)
   }
@@ -114,7 +114,7 @@ function segFtpForColor(seg) {
 
 // ── Main exported init ────────────────────────────────────────────────────────
 
-export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, onWorkoutEnd }) {
+export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsParams, onWorkoutEnd }) {
   const loadBtn    = document.getElementById('load-zwo-btn')
   const fileInput  = document.getElementById('zwo-file-input')
   const zwoListEl  = document.getElementById('zwo-list')
@@ -130,6 +130,53 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, onWorkoutEnd 
   let selectedWorkout = null  // { record, segments }
   let controller      = null
   let isPaused        = false
+  let sessionRestored = false
+
+  // ── セッション永続化 ────────────────────────────────────────────────────────
+  const SESSION_KEY = 'workout-session'
+
+  function saveSession() {
+    if (!controller || !selectedWorkout) return
+    const cp = controller.getCheckpoint()
+    if (!cp) return
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ workoutId: selectedWorkout.record.id, ftpW: getFtpW(), ...cp })) }
+    catch { /* storage full */ }
+  }
+
+  function clearSession() { localStorage.removeItem(SESSION_KEY) }
+
+  window.addEventListener('beforeunload', () => { if (controller && selectedWorkout) saveSession() })
+
+  // ── コントローラ起動（新規・復元共通） ─────────────────────────────────────
+  async function launchController(segments, ftpW, checkpoint = null) {
+    const params = getPhysicsParams ? await getPhysicsParams() : null
+    controller = new WorkoutController({
+      segments,
+      ftpW,
+      getLiveData,
+      ftmsClient,
+      params,
+      onStateUpdate: (state) => updateRunUI(state, segments, ftpW),
+      onFinished:    (summary) => {
+        controller = null
+        clearSession()
+        setRunningState(false)
+        if (summary) onWorkoutEnd({ ...summary, workoutName: selectedWorkout?.record?.name ?? '' })
+      },
+      onAutoPause: () => { pauseBtn.textContent = '自動一時停止中 ▶ 再開' },
+      onAutoResume: () => { isPaused = false; pauseBtn.textContent = '⏸ 一時停止' },
+    })
+    buildProgressSvg(progressSvg, segments)
+    buildSegmentList(segListEl, segments, ftpW)
+    setRunningState(true)
+    if (checkpoint) {
+      controller.restoreFrom(checkpoint)
+      isPaused = true
+      pauseBtn.textContent = '▶ 再開（中断から復元）'
+    } else {
+      controller.start()
+    }
+  }
 
   loadBtn.addEventListener('click', () => fileInput.click())
 
@@ -149,30 +196,8 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, onWorkoutEnd 
 
   startBtn.addEventListener('click', async () => {
     if (!selectedWorkout || !getLiveData) return
-    const ftpW = getFtpW()
-    controller = new WorkoutController({
-      segments:  selectedWorkout.segments,
-      ftpW,
-      getLiveData,
-      ftmsClient,
-      onStateUpdate: (state) => updateRunUI(state, selectedWorkout.segments),
-      onFinished:    (summary) => {
-        controller = null
-        setRunningState(false)
-        if (summary) onWorkoutEnd(summary)
-      },
-      onAutoPause: () => {
-        pauseBtn.textContent = '自動一時停止中 ▶ 再開'
-      },
-      onAutoResume: () => {
-        isPaused = false
-        pauseBtn.textContent = '⏸ 一時停止'
-      },
-    })
-    buildProgressSvg(progressSvg, selectedWorkout.segments)
-    buildSegmentList(segListEl, selectedWorkout.segments, ftpW)
-    setRunningState(true)
-    controller.start()
+    clearSession()
+    await launchController(selectedWorkout.segments, getFtpW())
   })
 
   pauseBtn.addEventListener('click', () => {
@@ -189,12 +214,14 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, onWorkoutEnd 
       controller.pause()
       isPaused = true
       pauseBtn.textContent = '▶ 再開'
+      saveSession()
     }
   })
 
   stopBtn.addEventListener('click', () => {
     const summary = controller?.stop()
     controller = null
+    clearSession()
     setRunningState(false)
     if (summary) onWorkoutEnd(summary)
   })
@@ -265,18 +292,45 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, onWorkoutEnd 
       item.querySelector('.zwo-info').addEventListener('click', () => selectWorkout(r))
       zwoListEl.appendChild(item)
     }
+
+    // 初回のみ：保存済みセッションを復元
+    if (!sessionRestored) {
+      sessionRestored = true
+      try {
+        const session = JSON.parse(localStorage.getItem(SESSION_KEY))
+        if (session) {
+          const record = workouts.find(w => w.id === session.workoutId)
+          if (record) {
+            selectWorkout(record)
+            await launchController(parseZwo(record.zwoText).segments, session.ftpW, session)
+          } else {
+            clearSession()
+          }
+        }
+      } catch { clearSession() }
+    }
   }
 
   renderList()
 
   // ── Running UI ──────────────────────────────────────────────────────────────
 
-  function updateRunUI(state, segments) {
+  function updateRunUI(state, segments, ftpW) {
     setText('wo-hud-time',    fmtTime(state.elapsedS))
     setText('wo-hud-power',   Math.round(state.powerW))
     setText('wo-hud-cadence', Math.round(state.cadenceRpm))
     setText('wo-hud-hr',      state.heartRateBpm > 0 ? state.heartRateBpm : '--')
     setText('wo-hud-target',  state.targetPowerW !== null ? Math.round(state.targetPowerW) : '--')
+
+    // パワーカードの背景色をFTPゾーンカラーに
+    const targetColor = ftpColor(state.targetPowerW !== null ? state.targetPowerW / ftpW : 0)
+    const actualColor = ftpColor(state.powerW / ftpW)
+    setHudItemColor('wo-hud-target-item', targetColor)
+    setHudItemColor('wo-hud-power-item',  actualColor)
+
+    // 仮想距離・速度
+    setText('wo-hud-distance', (state.distanceM / 1000).toFixed(2))
+    setText('wo-hud-speed',    (state.velocityMs * 3.6).toFixed(1))
 
     // Target cadence
     const targetCad = state.segment?.cadenceRpm ?? null
@@ -363,7 +417,6 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, onWorkoutEnd 
 
 function buildProgressSvg(svg, segments) {
   renderProfileSvg(svg, segments, 1000, 60)
-  // Add cursor line (will be updated each tick)
   const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'line')
   cursor.id = 'workout-progress-cursor'
   cursor.setAttribute('x1', '0'); cursor.setAttribute('x2', '0')
@@ -372,6 +425,9 @@ function buildProgressSvg(svg, segments) {
   cursor.setAttribute('stroke-width', '1.5')
   cursor.setAttribute('stroke-dasharray', '4,3')
   svg.appendChild(cursor)
+
+  const totalEl = document.getElementById('workout-total-time')
+  if (totalEl) totalEl.textContent = fmtTime(totalDurationS(segments))
 }
 
 function updateProgressCursor(svg, elapsedS, totalS) {
@@ -383,6 +439,13 @@ function updateProgressCursor(svg, elapsedS, totalS) {
 }
 
 // ── Utility ──────────────────────────────────────────────────────────────────
+
+function setHudItemColor(id, color) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.style.background   = hexWithAlpha(color, 0.30)
+  el.style.borderColor  = color
+}
 
 function hexWithAlpha(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16)
