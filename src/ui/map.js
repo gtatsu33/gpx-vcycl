@@ -80,3 +80,5 @@ export class MapView {
     this.#map.remove()
   }
 }
+
+export { MapView as LeafletMapView }

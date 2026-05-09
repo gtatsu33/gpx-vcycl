@@ -174,7 +174,7 @@ export class RideController {
     this.#simulator.tick(smoothPowerW, TICK_MS / 1000)
 
     const state = this.#simulator.getState()
-    this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg)
+    this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg, state.currentGradientPercent)
     this.#mapView.setProgress(state.distanceM)
     this.#hudView.update({
       velocityMs:      state.velocityMs,

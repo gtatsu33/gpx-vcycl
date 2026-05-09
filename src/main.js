@@ -1,6 +1,6 @@
 import { initDb, getDb }            from './storage/db.js'
 import { initDeviceManager }         from './ui/deviceManager.js'
-import { MapView }                   from './ui/map.js'
+import { createMapView }              from './ui/mapFactory.js'
 import { HUDView }                   from './ui/hud.js'
 import { initRoutePicker }           from './ui/routePicker.js'
 import { RideController }            from './ride/rideController.js'
@@ -128,6 +128,16 @@ async function loadSettings() {
     const val = v ?? 0.5
     document.getElementById('trainer-difficulty-input').value = val
     document.getElementById('trainer-difficulty-val').textContent = parseFloat(val).toFixed(1)
+  })
+  db.get('settings', 'mapProvider').then((v) => {
+    const current = v ?? 'osm'
+    document.querySelectorAll('input[name="map-provider"]').forEach((radio) => {
+      radio.checked = radio.value === current
+      radio.addEventListener('change', async (e) => {
+        await getDb().put('settings', e.target.value, 'mapProvider')
+        location.reload()
+      })
+    })
   })
 }
 
@@ -312,7 +322,7 @@ async function init() {
   getLiveData  = result.getLiveData
   ftmsClient   = result.ftmsClient
 
-  mapView = new MapView(document.getElementById('map-container'))
+  mapView = await createMapView(document.getElementById('map-container'))
   hudView = new HUDView()
 
   rideEndModal = new RideEndModal({
