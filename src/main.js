@@ -1,6 +1,7 @@
 import { initDb, getDb }            from './storage/db.js'
 import { initDeviceManager }         from './ui/deviceManager.js'
 import { createMapView }              from './ui/mapFactory.js'
+import { EleView }                    from './ui/eleView.js'
 import { activateOwnerModeIfValid, isOwnerMode } from './utils/ownerMode.js'
 import { HUDView }                   from './ui/hud.js'
 import { initRoutePicker }           from './ui/routePicker.js'
@@ -45,6 +46,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ── Tab switching ──────────────────────────────────────────────────────
 let mapView = null
+let eleView = null
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.tab
@@ -52,7 +54,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     document.querySelectorAll('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${target}`))
     if (target === 'route' || target === 'workout') requestWakeLock()
     if (target !== 'route' && target !== 'workout') releaseWakeLock()
-    if (target === 'route')   requestAnimationFrame(() => mapView?.invalidateSize())
+    if (target === 'route')   requestAnimationFrame(() => { mapView?.invalidateSize(); eleView?.resize() })
     if (target === 'history') renderRideHistory()
   })
 })
@@ -243,6 +245,7 @@ startBtn.addEventListener('click', async () => {
     params,
     mapView,
     hudView,
+    eleView,
     getLiveData,
     smoothingWindowSec,
     trainerDifficulty,
@@ -329,7 +332,17 @@ async function init() {
   getLiveData  = result.getLiveData
   ftmsClient   = result.ftmsClient
 
-  mapView = await createMapView(document.getElementById('map-container'))
+  const mapProvider = (await getDb().get('settings', 'mapProvider')) ?? 'osm'
+  const isOsmMode   = !(mapProvider === 'google' && isOwnerMode())
+  const eleCanvas   = document.getElementById('ele-view')
+  eleCanvas.hidden  = !isOsmMode
+
+  mapView = await createMapView(
+    document.getElementById('map-inner'),
+    document.getElementById('map-container'),
+  )
+  if (isOsmMode) eleView = new EleView(eleCanvas)
+
   hudView = new HUDView()
 
   rideEndModal = new RideEndModal({
@@ -342,6 +355,7 @@ async function init() {
       selectedRouteId   = id
       selectedRouteName = name
       startBtn.disabled = false
+      eleView?.setRoute(route)
     },
   })
 
@@ -371,10 +385,11 @@ async function init() {
         selectedRouteId   = routeSession.routeId
         selectedRouteName = routeSession.routeName
         startBtn.disabled = false
+        eleView?.setRoute(route)
 
         rideController = new RideController({
           route, routeId: routeSession.routeId, routeName: routeSession.routeName,
-          params, mapView, hudView, getLiveData, smoothingWindowSec, trainerDifficulty,
+          params, mapView, hudView, eleView, getLiveData, smoothingWindowSec, trainerDifficulty,
           ftmsClient: trainerEnabled ? ftmsClient : null,
           onFinished: (summary) => {
             rideController = null

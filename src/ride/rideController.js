@@ -34,6 +34,9 @@ export class RideController {
   #lastSentGradient         = null
   #simulationParams         = null
 
+  // Forward gradient view
+  #eleView = null
+
   // Callbacks
   #onFinished = null
 
@@ -56,6 +59,7 @@ export class RideController {
     route, routeId = null, routeName = '',
     params, mapView, hudView, getLiveData,
     ftmsClient               = null,
+    eleView                  = null,
     onFinished               = null,
     smoothingWindowSec       = 3,
     gradientUpdateIntervalMs = 1000,
@@ -72,6 +76,7 @@ export class RideController {
     this.#routeId                = routeId
     this.#routeName              = routeName
     this.#ftmsClient             = ftmsClient
+    this.#eleView                = eleView
     this.#trainerDifficulty      = trainerDifficulty
     this.#onFinished             = onFinished
     this.#gradientUpdateIntervalMs = gradientUpdateIntervalMs
@@ -176,6 +181,7 @@ export class RideController {
     const state = this.#simulator.getState()
     this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg, state.currentGradientPercent)
     this.#mapView.setProgress(state.distanceM)
+    this.#eleView?.update(state.distanceM)
     this.#hudView.update({
       velocityMs:      state.velocityMs,
       distanceM:       state.distanceM,
