@@ -13,7 +13,7 @@ function foggedColor(hex, t) {
   const r1  = parseInt(hex.slice(1, 3), 16)
   const g1  = parseInt(hex.slice(3, 5), 16)
   const b1  = parseInt(hex.slice(5, 7), 16)
-  const fog = t * 0.80
+  const fog = t * 0.95
   return `rgb(${Math.round(r1 + (FOG_RGB[0] - r1) * fog)},${Math.round(g1 + (FOG_RGB[1] - g1) * fog)},${Math.round(b1 + (FOG_RGB[2] - b1) * fog)})`
 }
 
@@ -93,7 +93,7 @@ export class EleView {
     // Perspective constants (CSS px)
     const Y_NEAR     = H
     const Y_HORIZON  = H * 0.60   // flat road reaches 40% up from bottom
-    const W_NEAR     = W * 0.65
+    const W_NEAR     = W * 0.85
     const W_FAR      = W * 0.30   // far end ~50% canvas width
     const ELEV_SCALE = (Y_NEAR - Y_HORIZON) / 100  // 100 m fills full perspective height
 
@@ -124,6 +124,16 @@ export class EleView {
       ctx.fillStyle = foggedColor(gradientColor(Math.abs(grad)), midD / aheadM)
       ctx.fill()
     }
+
+    // Reference lines: left/right edges of a flat (0% gradient) road
+    ctx.beginPath()
+    ctx.moveTo(W / 2 - W_NEAR / 2, Y_NEAR)
+    ctx.lineTo(W / 2 - W_FAR  / 2, Y_HORIZON)
+    ctx.moveTo(W / 2 + W_NEAR / 2, Y_NEAR)
+    ctx.lineTo(W / 2 + W_FAR  / 2, Y_HORIZON)
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'
+    ctx.lineWidth   = 4
+    ctx.stroke()
 
     // Labels
     const e0      = this.#route.getElevationAt(currentDistM)
