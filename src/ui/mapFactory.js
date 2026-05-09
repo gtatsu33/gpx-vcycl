@@ -1,8 +1,9 @@
-import { getDb } from '../storage/db.js'
+import { getDb }       from '../storage/db.js'
+import { isOwnerMode } from '../utils/ownerMode.js'
 
 export async function createMapView(containerEl) {
   const provider = (await getDb().get('settings', 'mapProvider')) ?? 'osm'
-  if (provider === 'google') {
+  if (provider === 'google' && isOwnerMode()) {
     const { GoogleMapView } = await import('./googleMapView.js')
     return new GoogleMapView(containerEl)
   }

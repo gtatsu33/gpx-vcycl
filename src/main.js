@@ -1,6 +1,7 @@
 import { initDb, getDb }            from './storage/db.js'
 import { initDeviceManager }         from './ui/deviceManager.js'
 import { createMapView }              from './ui/mapFactory.js'
+import { activateOwnerModeIfValid, isOwnerMode } from './utils/ownerMode.js'
 import { HUDView }                   from './ui/hud.js'
 import { initRoutePicker }           from './ui/routePicker.js'
 import { RideController }            from './ride/rideController.js'
@@ -302,6 +303,12 @@ async function init() {
     dbStatusEl.className   = 'error'
     console.error(err)
     return
+  }
+
+  // オーナーモード: URLに ?owner=PASSCODE があれば検証してセッションに記録
+  await activateOwnerModeIfValid()
+  if (isOwnerMode()) {
+    document.getElementById('map-provider-group').hidden = false
   }
 
   // Strava OAuth コールバック処理（リダイレクトで戻ってきた場合）
