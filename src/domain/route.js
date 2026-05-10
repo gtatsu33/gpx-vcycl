@@ -42,10 +42,43 @@ export function calculateGradients(points, windowM = 30) {
   })
 }
 
+/**
+ * Smooth elevation samples with a distance-based regression window.
+ * Preserves steady grades better than a simple moving average, especially near route edges.
+ * @param {Array<{distanceFromStartM: number, elevationM: number|null}>} points
+ * @param {number} windowM
+ */
+export function smoothElevations(points, windowM) {
+  const half = windowM / 2
+  return points.map((pt) => {
+    if (pt.elevationM === null) return pt
+
+    const win = points.filter(
+      (p) => p.elevationM !== null && Math.abs(p.distanceFromStartM - pt.distanceFromStartM) <= half
+    )
+
+    if (win.length < 2) return pt
+
+    const n    = win.length
+    const sumX  = win.reduce((s, p) => s + p.distanceFromStartM, 0)
+    const sumY  = win.reduce((s, p) => s + p.elevationM, 0)
+    const sumXY = win.reduce((s, p) => s + p.distanceFromStartM * p.elevationM, 0)
+    const sumX2 = win.reduce((s, p) => s + p.distanceFromStartM ** 2, 0)
+    const denom = n * sumX2 - sumX ** 2
+    if (denom === 0) return { ...pt, elevationM: sumY / n }
+
+    const slopePerM = (n * sumXY - sumX * sumY) / denom
+    const intercept = (sumY - slopePerM * sumX) / n
+    const elevationM = intercept + slopePerM * pt.distanceFromStartM
+    return { ...pt, elevationM: Math.abs(elevationM - pt.elevationM) < 1e-9 ? pt.elevationM : elevationM }
+  })
+}
+
 export class Route {
   #name
   #points
   #gradientBuckets = []
+  static #ELEVATION_SMOOTHING_WINDOW_M = 300
   static #BUCKET_M = 50
 
   constructor(name, points) {
@@ -81,7 +114,8 @@ export class Route {
       return { ...pt, distanceFromStartM: cumM }
     })
 
-    return new Route(name, calculateGradients(withDist, windowM))
+    const smoothed = smoothElevations(withDist, Route.#ELEVATION_SMOOTHING_WINDOW_M)
+    return new Route(name, calculateGradients(smoothed, windowM))
   }
 
   get name()   { return this.#name }

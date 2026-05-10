@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateGradients } from '../../src/domain/route.js'
+import { calculateGradients, smoothElevations } from '../../src/domain/route.js'
 
 function pts(specs) {
   return specs.map(([distanceFromStartM, elevationM]) => ({
@@ -53,5 +53,26 @@ describe('calculateGradients', () => {
     expect(p.lon).toBe(0)
     expect(p.elevationM).toBe(100)
     expect(p.distanceFromStartM).toBe(0)
+  })
+})
+
+describe('smoothElevations', () => {
+  it('preserves steady grades', () => {
+    const input = pts([[0,0],[100,10],[200,20],[300,30],[400,40]])
+    const result = smoothElevations(input, 300)
+    result.forEach((p, i) => expect(p.elevationM).toBeCloseTo(input[i].elevationM, 5))
+  })
+
+  it('reduces isolated elevation spikes', () => {
+    const input = pts([[0,0],[100,0],[150,30],[200,0],[300,0]])
+    const result = smoothElevations(input, 300)
+    expect(result[2].elevationM).toBeGreaterThan(0)
+    expect(result[2].elevationM).toBeLessThan(30)
+  })
+
+  it('keeps null elevation points as null', () => {
+    const input = pts([[0,0],[100,null],[200,20]])
+    const result = smoothElevations(input, 300)
+    expect(result[1].elevationM).toBeNull()
   })
 })
