@@ -52,7 +52,7 @@ export class EleView {
 
     this.#scene = new THREE.Scene()
     this.#scene.background = new THREE.Color(BG_COLOR)
-    this.#scene.fog = new THREE.Fog(BG_COLOR, 80, 550)
+    this.#scene.fog = new THREE.Fog(BG_COLOR, 5, 530)
 
     this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
 
