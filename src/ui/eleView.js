@@ -10,25 +10,15 @@ const FADE_MIN     = 0.15   // brightness at FADE_DIST (15% of original color)
 const BG_COLOR     = 0x0e1820
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
-const TINT_MIX     = 0.20   // 20% gradient tint on asphalt base
+// Same 5-level gradient scheme as Canvas 2D, darkened 35% for realism
+const DARK = 0.65
 
-const ASPHALT = new THREE.Color(0x585858)   // medium-grey road surface
-
-// Pre-built gradient tints blended onto asphalt (computed once at load)
-const ROAD_EASY    = blend(new THREE.Color('#2ed573'))  // < 3%
-const ROAD_MOD     = blend(new THREE.Color('#ffd32a'))  // 3–6%
-const ROAD_HARD    = blend(new THREE.Color('#ff6348'))  // 6–9%
-const ROAD_STEEP   = blend(new THREE.Color('#ff0000'))  // 9–12%
-const ROAD_EXTREME = blend(new THREE.Color('#4C2E30'))  // ≥ 12%
-const SHOULDER_COL = new THREE.Color(0x282828)          // darker shoulder edge
-
-function blend(tint) {
-  return new THREE.Color(
-    ASPHALT.r + (tint.r - ASPHALT.r) * TINT_MIX,
-    ASPHALT.g + (tint.g - ASPHALT.g) * TINT_MIX,
-    ASPHALT.b + (tint.b - ASPHALT.b) * TINT_MIX,
-  )
-}
+const ROAD_EASY    = new THREE.Color('#2ed573').multiplyScalar(DARK)  // < 3%
+const ROAD_MOD     = new THREE.Color('#ffd32a').multiplyScalar(DARK)  // 3–6%
+const ROAD_HARD    = new THREE.Color('#ff6348').multiplyScalar(DARK)  // 6–9%
+const ROAD_STEEP   = new THREE.Color('#ff0000').multiplyScalar(DARK)  // 9–12%
+const ROAD_EXTREME = new THREE.Color('#4C2E30').multiplyScalar(DARK)  // ≥ 12%
+const SHOULDER_COL = new THREE.Color(0x282828)
 
 function roadColor(gradPct) {
   const a = Math.abs(gradPct)
