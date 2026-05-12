@@ -21,11 +21,10 @@ const ROAD_EXTREME = new THREE.Color('#4C2E30').multiplyScalar(DARK)  // ≥ 12%
 const SHOULDER_COL = new THREE.Color(0x282828)
 
 function roadColor(gradPct) {
-  const a = Math.abs(gradPct)
-  if (a < 3)  return ROAD_EASY
-  if (a < 6)  return ROAD_MOD
-  if (a < 9)  return ROAD_HARD
-  if (a < 12) return ROAD_STEEP
+  if (gradPct < 3)  return ROAD_EASY    // downhill + flat + gentle uphill
+  if (gradPct < 6)  return ROAD_MOD
+  if (gradPct < 9)  return ROAD_HARD
+  if (gradPct < 12) return ROAD_STEEP
   return ROAD_EXTREME
 }
 
