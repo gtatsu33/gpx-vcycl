@@ -334,14 +334,14 @@ async function init() {
 
   const mapProvider = (await getDb().get('settings', 'mapProvider')) ?? 'osm'
   const isOsmMode   = !(mapProvider === 'google' && isOwnerMode())
-  const eleCanvas   = document.getElementById('ele-view')
-  eleCanvas.hidden  = !isOsmMode
+  const eleViewEl   = document.getElementById('ele-view')
+  eleViewEl.hidden  = !isOsmMode
 
   mapView = await createMapView(
     document.getElementById('map-inner'),
     document.getElementById('map-container'),
   )
-  if (isOsmMode) eleView = new EleView(eleCanvas)
+  if (isOsmMode) eleView = new EleView(eleViewEl)
 
   hudView = new HUDView()
 

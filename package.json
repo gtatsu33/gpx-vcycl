@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "idb": "^8.0.0",
-    "leaflet": "^1.9.4"
+    "leaflet": "^1.9.4",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^1.1.0",
