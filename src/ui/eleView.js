@@ -3,9 +3,9 @@ import * as THREE from 'three'
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
 const CAM_HEIGHT   = 2.0    // m above road (world units)
-const LOOK_AHEAD   = 25     // m — shorter = more camera tilt on grade
+const LOOK_AHEAD   = 40     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
-const Y_EXAG       = 3.0    // vertical exaggeration: 7% grade appears as 21% visually
+const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
 const FADE_DIST    = 500    // m — full fade over this distance
 const FADE_MIN     = 0.15   // brightness at FADE_DIST (15% of original color)
 const BG_COLOR     = 0x0e1820
@@ -112,8 +112,11 @@ export class EleView {
     if (!this.#pts3D) return
     const cam  = interpPt(this.#pts3D, distM)
     const look = interpPt(this.#pts3D, distM + LOOK_AHEAD)
-    this.#camera.position.set(cam.x, cam.y + CAM_HEIGHT, cam.z)
-    this.#camera.lookAt(look.x, look.y, look.z)
+    const eyeY = cam.y + CAM_HEIGHT
+    this.#camera.position.set(cam.x, eyeY, cam.z)
+    // Fix vertical gaze to rider's eye level — road rises/falls relative to this fixed line.
+    // Horizontal (x/z) tracks the route ahead for turn responsiveness.
+    this.#camera.lookAt(look.x, eyeY - 0.2, look.z)
   }
 
   // Bake distance-based brightness fade into vertex colors for the visible window.
