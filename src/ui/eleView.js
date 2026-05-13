@@ -6,8 +6,8 @@ const CAM_HEIGHT   = 1.5    // m above road
 const LOOK_AHEAD   = 40     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
 const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
-const FADE_DIST    = 500    // m — full fade over this distance
-const FADE_MIN     = 0.15   // brightness at FADE_DIST
+const FADE_DIST    = 280    // m — fade to black over this distance
+const FADE_MIN     = 0.0    // fade to black; fog blends to sky beyond
 const SKY_HORIZON  = 0x0d2035
 const SKY_CSS      = 'linear-gradient(to bottom,#060b12 0%,#0d2035 60%,#0e1820 100%)'
 const EARTH_R      = 6_371_000
@@ -36,7 +36,8 @@ export class EleView {
   #camera
   #mesh          = null
   #dashMesh      = null
-  #dashDistances = null
+  #dashNear      = null   // road-distance at near edge of each dash quad
+  #dashFar       = null   // road-distance at far edge of each dash quad
   #pts3D         = null
   #route         = null
   #targetDistM   = 0
@@ -58,7 +59,7 @@ export class EleView {
     this.#renderer.setClearColor(0x000000, 0)  // transparent — CSS sky shows through
 
     this.#scene = new THREE.Scene()
-    this.#scene.fog = new THREE.Fog(SKY_HORIZON, 300, 500)
+    this.#scene.fog = new THREE.Fog(SKY_HORIZON, 160, 310)
 
     this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
 
@@ -91,9 +92,10 @@ export class EleView {
     this.#pts3D = buildPts3D(route.points)
     this.#mesh  = buildRibbonMesh(this.#pts3D)
     this.#scene.add(this.#mesh)
-    const { mesh: dm, distMs } = buildDashMesh(this.#pts3D)
-    this.#dashMesh      = dm
-    this.#dashDistances = distMs
+    const { mesh: dm, nearM, farM } = buildDashMesh(this.#pts3D)
+    this.#dashMesh = dm
+    this.#dashNear = nearM
+    this.#dashFar  = farM
     this.#scene.add(this.#dashMesh)
     this.#currentDistM = this.#targetDistM
     this.#updateCameraAt(this.#currentDistM)
@@ -147,8 +149,7 @@ export class EleView {
       const pt    = pts[i]
       const ahead = pt.distM - camDistM
       if (ahead > FADE_DIST + 50) break
-      const t    = Math.max(0, Math.min(1, ahead / FADE_DIST))
-      const fade = 1.0 - (1.0 - FADE_MIN) * t
+      const fade = depthFade(ahead)
       const rCol = roadColor(pt.grad)
       for (let v = 0; v < V; v++) {
         const b   = (i * V + v) * 3
@@ -160,23 +161,24 @@ export class EleView {
     }
     colAttr.needsUpdate = true
 
-    if (!this.#dashMesh || !this.#dashDistances) return
-    const dCol  = this.#dashMesh.geometry.attributes.color
-    const dists = this.#dashDistances
-    let dlo = 0, dhi = dists.length - 1
+    if (!this.#dashMesh || !this.#dashNear) return
+    const dCol = this.#dashMesh.geometry.attributes.color
+    const near = this.#dashNear
+    let dlo = 0, dhi = near.length - 1
     while (dlo < dhi) {
       const dm = (dlo + dhi) >> 1
-      if (dists[dm] < camDistM - 50) dlo = dm + 1; else dhi = dm
+      if (near[dm] < camDistM - 50) dlo = dm + 1; else dhi = dm
     }
-    for (let i = dlo; i < dists.length; i++) {
-      const ahead = dists[i] - camDistM
-      if (ahead > FADE_DIST + 50) break
-      const t    = Math.max(0, Math.min(1, ahead / FADE_DIST))
-      const fade = (1.0 - (1.0 - FADE_MIN) * t) * 0.85
-      for (let v = 0; v < 4; v++) {
-        const b = (i * 4 + v) * 3
-        dCol.array[b] = dCol.array[b + 1] = dCol.array[b + 2] = fade
-      }
+    for (let i = dlo; i < near.length; i++) {
+      if (near[i] - camDistM > FADE_DIST + 50) break
+      // v0,v1 = near edge; v2,v3 = far edge — fade per vertex for accuracy
+      const fadeN = depthFade(near[i] - camDistM)
+      const fadeF = depthFade(this.#dashFar[i] - camDistM)
+      const b0 = i * 4 * 3
+      dCol.array[b0]      = dCol.array[b0 + 1]  = dCol.array[b0 + 2]  = fadeN
+      dCol.array[b0 + 3]  = dCol.array[b0 + 4]  = dCol.array[b0 + 5]  = fadeN
+      dCol.array[b0 + 6]  = dCol.array[b0 + 7]  = dCol.array[b0 + 8]  = fadeF
+      dCol.array[b0 + 9]  = dCol.array[b0 + 10] = dCol.array[b0 + 11] = fadeF
     }
     dCol.needsUpdate = true
   }
@@ -289,6 +291,12 @@ function buildRibbonMesh(pts3D) {
   }))
 }
 
+// Nonlinear depth fade: faster falloff near camera for perceptual clarity
+function depthFade(aheadM) {
+  const t = Math.max(0, Math.min(1, aheadM / FADE_DIST))
+  return Math.pow(1 - t, 1.5)
+}
+
 function buildDashMesh(pts3D) {
   const DASH_LEN = 3.0
   const PERIOD   = 6.0    // 3m dash + 3m gap
@@ -298,7 +306,8 @@ function buildDashMesh(pts3D) {
   const posList = []
   const colList = []
   const idxList = []
-  const distMs  = []
+  const nearM   = []   // road-distance at near edge of each quad
+  const farM    = []   // road-distance at far edge of each quad
   let vi = 0
 
   for (let i = 0; i < pts3D.length - 1; i++) {
@@ -311,14 +320,15 @@ function buildDashMesh(pts3D) {
     const rx =  tz / len,  rz = -tx / len
 
     posList.push(
-      pt.x   - rx * DASH_W,   pt.y   + Y_OFF, pt.z   - rz * DASH_W,
-      pt.x   + rx * DASH_W,   pt.y   + Y_OFF, pt.z   + rz * DASH_W,
-      next.x + rx * DASH_W,   next.y + Y_OFF, next.z + rz * DASH_W,
-      next.x - rx * DASH_W,   next.y + Y_OFF, next.z - rz * DASH_W,
+      pt.x   - rx * DASH_W,   pt.y   + Y_OFF, pt.z   - rz * DASH_W,  // v0 near-L
+      pt.x   + rx * DASH_W,   pt.y   + Y_OFF, pt.z   + rz * DASH_W,  // v1 near-R
+      next.x + rx * DASH_W,   next.y + Y_OFF, next.z + rz * DASH_W,  // v2 far-R
+      next.x - rx * DASH_W,   next.y + Y_OFF, next.z - rz * DASH_W,  // v3 far-L
     )
-    for (let v = 0; v < 4; v++) colList.push(0, 0, 0)  // filled by #updateVertexColors
+    for (let v = 0; v < 4; v++) colList.push(0, 0, 0)
     idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
-    distMs.push(pt.distM)
+    nearM.push(pt.distM)
+    farM.push(next.distM)
     vi += 4
   }
 
@@ -329,6 +339,7 @@ function buildDashMesh(pts3D) {
 
   return {
     mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
-    distMs,
+    nearM,
+    farM,
   }
 }
