@@ -2,17 +2,17 @@ import * as THREE from 'three'
 
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
-const CAM_HEIGHT   = 2.0    // m above road (world units)
+const CAM_HEIGHT   = 1.5    // m above road
 const LOOK_AHEAD   = 40     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
 const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
 const FADE_DIST    = 500    // m — full fade over this distance
-const FADE_MIN     = 0.15   // brightness at FADE_DIST (15% of original color)
-const BG_COLOR     = 0x0e1820
+const FADE_MIN     = 0.15   // brightness at FADE_DIST
+const SKY_HORIZON  = 0x0d2035
+const SKY_CSS      = 'linear-gradient(to bottom,#060b12 0%,#0d2035 60%,#0e1820 100%)'
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
-// Same 5-level gradient scheme as Canvas 2D, darkened 35% for realism
-const DARK = 0.65
+const DARK         = 0.65
 
 const ROAD_EASY    = new THREE.Color('#2ed573').multiplyScalar(DARK)  // < 3%
 const ROAD_MOD     = new THREE.Color('#ffd32a').multiplyScalar(DARK)  // 3–6%
@@ -34,30 +34,31 @@ export class EleView {
   #renderer
   #scene
   #camera
-  #mesh         = null
-  #pts3D        = null
-  #route        = null
-  #targetDistM  = 0
-  #currentDistM = 0
+  #mesh          = null
+  #dashMesh      = null
+  #dashDistances = null
+  #pts3D         = null
+  #route         = null
+  #targetDistM   = 0
+  #currentDistM  = 0
   #labelEl
 
   constructor(containerEl) {
     this.#container = containerEl
-    containerEl.style.position = 'relative'
-    containerEl.style.overflow = 'hidden'
+    containerEl.style.position   = 'relative'
+    containerEl.style.overflow   = 'hidden'
+    containerEl.style.background = SKY_CSS
 
     const canvas = document.createElement('canvas')
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block'
     containerEl.appendChild(canvas)
 
-    this.#renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+    this.#renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
     this.#renderer.setPixelRatio(window.devicePixelRatio)
-    this.#renderer.setClearColor(BG_COLOR)
+    this.#renderer.setClearColor(0x000000, 0)  // transparent — CSS sky shows through
 
     this.#scene = new THREE.Scene()
-    this.#scene.background = new THREE.Color(BG_COLOR)
-    // Fog only handles the final horizon blend; depth is expressed via vertex brightness
-    this.#scene.fog = new THREE.Fog(BG_COLOR, 400, 600)
+    this.#scene.fog = new THREE.Fog(SKY_HORIZON, 300, 500)
 
     this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
 
@@ -82,9 +83,18 @@ export class EleView {
       this.#mesh.geometry.dispose()
       this.#mesh = null
     }
-    this.#pts3D        = buildPts3D(route.points)
-    this.#mesh         = buildRibbonMesh(this.#pts3D)
+    if (this.#dashMesh) {
+      this.#scene.remove(this.#dashMesh)
+      this.#dashMesh.geometry.dispose()
+      this.#dashMesh = null
+    }
+    this.#pts3D = buildPts3D(route.points)
+    this.#mesh  = buildRibbonMesh(this.#pts3D)
     this.#scene.add(this.#mesh)
+    const { mesh: dm, distMs } = buildDashMesh(this.#pts3D)
+    this.#dashMesh      = dm
+    this.#dashDistances = distMs
+    this.#scene.add(this.#dashMesh)
     this.#currentDistM = this.#targetDistM
     this.#updateCameraAt(this.#currentDistM)
     this.#updateVertexColors()
@@ -114,36 +124,31 @@ export class EleView {
     const look = interpPt(this.#pts3D, distM + LOOK_AHEAD)
     const eyeY = cam.y + CAM_HEIGHT
     this.#camera.position.set(cam.x, eyeY, cam.z)
-    // Fix vertical gaze to rider's eye level — road rises/falls relative to this fixed line.
-    // Horizontal (x/z) tracks the route ahead for turn responsiveness.
+    // Vertical gaze fixed at rider eye level — road rises/falls relative to this line.
+    // Horizontal (x/z) tracks the route for turn responsiveness.
     this.#camera.lookAt(look.x, eyeY - 0.2, look.z)
   }
 
   // Bake distance-based brightness fade into vertex colors for the visible window.
-  // Near (0 m): full brightness → Far (500 m): FADE_MIN brightness.
   #updateVertexColors() {
     if (!this.#mesh || !this.#pts3D) return
     const colAttr  = this.#mesh.geometry.attributes.color
     const pts      = this.#pts3D
     const camDistM = this.#currentDistM
-    const V        = 4   // vertices per cross-section
+    const V        = 4
 
-    // Binary search for first index at camDistM - 50 m
-    const minDist = camDistM - 50
     let lo = 0, hi = pts.length - 1
+    const minDist = camDistM - 50
     while (lo < hi) {
       const mid = (lo + hi) >> 1
       if (pts[mid].distM < minDist) lo = mid + 1; else hi = mid
     }
-
     for (let i = lo; i < pts.length; i++) {
       const pt    = pts[i]
       const ahead = pt.distM - camDistM
       if (ahead > FADE_DIST + 50) break
-
       const t    = Math.max(0, Math.min(1, ahead / FADE_DIST))
-      const fade = 1.0 - (1.0 - FADE_MIN) * t  // 1.0 → FADE_MIN
-
+      const fade = 1.0 - (1.0 - FADE_MIN) * t
       const rCol = roadColor(pt.grad)
       for (let v = 0; v < V; v++) {
         const b   = (i * V + v) * 3
@@ -154,6 +159,26 @@ export class EleView {
       }
     }
     colAttr.needsUpdate = true
+
+    if (!this.#dashMesh || !this.#dashDistances) return
+    const dCol  = this.#dashMesh.geometry.attributes.color
+    const dists = this.#dashDistances
+    let dlo = 0, dhi = dists.length - 1
+    while (dlo < dhi) {
+      const dm = (dlo + dhi) >> 1
+      if (dists[dm] < camDistM - 50) dlo = dm + 1; else dhi = dm
+    }
+    for (let i = dlo; i < dists.length; i++) {
+      const ahead = dists[i] - camDistM
+      if (ahead > FADE_DIST + 50) break
+      const t    = Math.max(0, Math.min(1, ahead / FADE_DIST))
+      const fade = (1.0 - (1.0 - FADE_MIN) * t) * 0.85
+      for (let v = 0; v < 4; v++) {
+        const b = (i * 4 + v) * 3
+        dCol.array[b] = dCol.array[b + 1] = dCol.array[b + 2] = fade
+      }
+    }
+    dCol.needsUpdate = true
   }
 
   #updateLabel() {
@@ -217,7 +242,6 @@ function interpPt(pts3D, distM) {
 function buildRibbonMesh(pts3D) {
   const n  = pts3D.length
   const V  = 4   // outer-L, road-L, road-R, outer-R
-  // Colors initialized to zero; #updateVertexColors fills the visible window
   const positions = new Float32Array(n * V * 3)
   const colors    = new Float32Array(n * V * 3)   // all black initially
 
@@ -263,4 +287,48 @@ function buildRibbonMesh(pts3D) {
     vertexColors: true,
     side: THREE.DoubleSide,
   }))
+}
+
+function buildDashMesh(pts3D) {
+  const DASH_LEN = 3.0
+  const PERIOD   = 6.0    // 3m dash + 3m gap
+  const DASH_W   = 0.15   // half-width of center line
+  const Y_OFF    = 0.1    // above road surface to prevent z-fighting
+
+  const posList = []
+  const colList = []
+  const idxList = []
+  const distMs  = []
+  let vi = 0
+
+  for (let i = 0; i < pts3D.length - 1; i++) {
+    const pt   = pts3D[i]
+    const next = pts3D[i + 1]
+    if ((pt.distM % PERIOD) > DASH_LEN) continue  // in gap phase
+
+    const tx = next.x - pt.x, tz = next.z - pt.z
+    const len = Math.sqrt(tx * tx + tz * tz) || 1
+    const rx =  tz / len,  rz = -tx / len
+
+    posList.push(
+      pt.x   - rx * DASH_W,   pt.y   + Y_OFF, pt.z   - rz * DASH_W,
+      pt.x   + rx * DASH_W,   pt.y   + Y_OFF, pt.z   + rz * DASH_W,
+      next.x + rx * DASH_W,   next.y + Y_OFF, next.z + rz * DASH_W,
+      next.x - rx * DASH_W,   next.y + Y_OFF, next.z - rz * DASH_W,
+    )
+    for (let v = 0; v < 4; v++) colList.push(0, 0, 0)  // filled by #updateVertexColors
+    idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
+    distMs.push(pt.distM)
+    vi += 4
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(posList), 3))
+  geo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array(colList), 3))
+  geo.setIndex(new THREE.BufferAttribute(new Uint32Array(idxList), 1))
+
+  return {
+    mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
+    distMs,
+  }
 }
