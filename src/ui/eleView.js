@@ -2,9 +2,10 @@ import * as THREE from 'three'
 
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
-const CAM_HEIGHT   = 2.0    // m above road
-const LOOK_AHEAD   = 40     // m
+const CAM_HEIGHT   = 2.0    // m above road (world units)
+const LOOK_AHEAD   = 25     // m — shorter = more camera tilt on grade
 const LERP_FACTOR  = 0.25
+const Y_EXAG       = 3.0    // vertical exaggeration: 7% grade appears as 21% visually
 const FADE_DIST    = 500    // m — full fade over this distance
 const FADE_MIN     = 0.15   // brightness at FADE_DIST (15% of original color)
 const BG_COLOR     = 0x0e1820
@@ -112,7 +113,7 @@ export class EleView {
     const cam  = interpPt(this.#pts3D, distM)
     const look = interpPt(this.#pts3D, distM + LOOK_AHEAD)
     this.#camera.position.set(cam.x, cam.y + CAM_HEIGHT, cam.z)
-    this.#camera.lookAt(look.x, look.y + 1.0, look.z)
+    this.#camera.lookAt(look.x, look.y, look.z)
   }
 
   // Bake distance-based brightness fade into vertex colors for the visible window.
@@ -190,7 +191,7 @@ function buildPts3D(points) {
   const cosLat = Math.cos(lat0 * DEG2RAD)
   return points.map(pt => ({
     x:     (pt.lon - lon0) * cosLat * EARTH_R * DEG2RAD,
-    y:      pt.elevationM ?? 0,
+    y:     (pt.elevationM ?? 0) * Y_EXAG,
     z:    -(pt.lat - lat0) * EARTH_R * DEG2RAD,
     distM:  pt.distanceFromStartM,
     grad:   pt.gradientPercent ?? 0,
