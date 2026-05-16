@@ -1,6 +1,11 @@
 export const G_MS2    = 9.81    // m/s²
 export const RHO_KGM3 = 1.225   // kg/m³, standard atmosphere
 
+// Aerobic power penalty above 1500m: ~1% per 100m (matches VO2max altitude research)
+export function altitudeFactor(elevM) {
+  return Math.max(0, 1 - Math.max(0, elevM - 1500) * 0.0001)
+}
+
 export const DEFAULT_PHYSICS = {
   massKg: 80,   // rider (70 kg) + bike (10 kg)
   cdA:    0.32, // m²

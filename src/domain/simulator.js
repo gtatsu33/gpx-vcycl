@@ -1,4 +1,4 @@
-import { stepVelocity } from './physics.js'
+import { stepVelocity, altitudeFactor } from './physics.js'
 
 export class RideSimulator {
   #route
@@ -23,8 +23,10 @@ export class RideSimulator {
     if (this.#paused || this.isFinished) return
     const s = this.#s
 
-    const gradient   = this.#route.getGradientAt(s.distanceM)
-    const newV       = stepVelocity(powerW, gradient, s.velocityMs, dtSec, this.#params)
+    const gradient    = this.#route.getGradientAt(s.distanceM)
+    const elevM       = this.#route.getElevationAt(s.distanceM) ?? 0
+    const effectivePowerW = powerW * altitudeFactor(elevM)
+    const newV        = stepVelocity(effectivePowerW, gradient, s.velocityMs, dtSec, this.#params)
     const prevDist   = s.distanceM
 
     s.distanceM  = Math.min(prevDist + newV * dtSec, this.#route.totalDistanceM)
