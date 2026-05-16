@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
@@ -13,6 +14,7 @@ const SKY_CSS      = 'linear-gradient(to bottom,#060b12 0%,#0d2035 60%,#0e1820 1
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
 const DARK         = 0.65
+const SIGN_INTERVAL_M = 1000  // 1km ごとに看板
 
 const ROAD_EASY    = new THREE.Color('#2ed573').multiplyScalar(DARK)  // < 3%
 const ROAD_MOD     = new THREE.Color('#ffd32a').multiplyScalar(DARK)  // 3–6%
@@ -43,6 +45,8 @@ export class EleView {
   #targetDistM   = 0
   #currentDistM  = 0
   #labelEl
+  #css2dRenderer = null
+  #signs         = []   // { distM, postMesh, css2dObj, remEl }
 
   constructor(containerEl) {
     this.#container = containerEl
@@ -71,6 +75,13 @@ export class EleView {
     ].join(';')
     this.#labelEl = label
     containerEl.appendChild(label)
+
+    const css2dEl = document.createElement('div')
+    css2dEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden'
+    containerEl.appendChild(css2dEl)
+
+    this.#css2dRenderer = new CSS2DRenderer({ element: css2dEl })
+    this.#css2dRenderer.setSize(containerEl.clientWidth, containerEl.clientHeight)
 
     new ResizeObserver(() => this.#syncSize()).observe(containerEl)
     this.#syncSize()
@@ -101,11 +112,13 @@ export class EleView {
     this.#updateCameraAt(this.#currentDistM)
     this.#updateVertexColors()
     this.#updateLabel()
+    this.#buildSigns()
   }
 
   update(distanceM) {
     this.#targetDistM = distanceM
     this.#updateLabel()
+    this.#updateSignLabels(distanceM)
   }
 
   resize() { this.#syncSize() }
@@ -116,6 +129,7 @@ export class EleView {
     const rect = this.#container.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return
     this.#renderer.setSize(rect.width, rect.height, false)
+    this.#css2dRenderer.setSize(rect.width, rect.height)
     this.#camera.aspect = rect.width / rect.height
     this.#camera.updateProjectionMatrix()
   }
@@ -195,6 +209,81 @@ export class EleView {
       `<span>Ahead ${Math.round(aheadM)}m</span><span>avg ${sign}${avg.toFixed(1)}%</span>`
   }
 
+  #buildSigns() {
+    for (const s of this.#signs) {
+      this.#scene.remove(s.postMesh)
+      s.postMesh.geometry.dispose()
+      s.css2dObj.element.remove()
+      this.#scene.remove(s.css2dObj)
+    }
+    this.#signs = []
+    if (!this.#pts3D || !this.#route) return
+
+    const totalM = this.#route.totalDistanceM
+    for (let km = 1; km * SIGN_INTERVAL_M < totalM; km++) {
+      const distM = km * SIGN_INTERVAL_M
+
+      // 3D位置: 道路右端の外側
+      const pt    = interpPt(this.#pts3D, distM)
+      const prev  = interpPt(this.#pts3D, distM - 1)
+      const next  = interpPt(this.#pts3D, distM + 1)
+      const tx = next.x - prev.x, tz = next.z - prev.z
+      const len = Math.sqrt(tx * tx + tz * tz) || 1
+      const rx =  tz / len, rz = -tx / len
+      const offset = ROAD_HALF_W + SHOULDER_W + 0.5  // 右端から0.5m外
+      const sx = pt.x + rx * offset
+      const sz = pt.z + rz * offset
+
+      // ポスト（支柱）
+      const postGeo = new THREE.BoxGeometry(0.15, 2.5, 0.15)
+      const postMat = new THREE.MeshBasicMaterial({ color: 0x888888 })
+      const postMesh = new THREE.Mesh(postGeo, postMat)
+      postMesh.position.set(sx, pt.y + 1.25, sz)
+      this.#scene.add(postMesh)
+
+      // CSS2Dラベル（看板パネル）
+      const el = document.createElement('div')
+      el.style.cssText = [
+        'background:rgba(20,30,40,0.85)',
+        'border:1px solid rgba(140,180,220,0.6)',
+        'border-radius:3px',
+        'padding:3px 6px',
+        'text-align:center',
+        'line-height:1.4',
+        'pointer-events:none',
+        'white-space:nowrap',
+      ].join(';')
+
+      const topEl = document.createElement('div')
+      topEl.style.cssText = 'font:bold 11px system-ui,sans-serif;color:#e8f0f8'
+      topEl.textContent = `${km}km`
+
+      const remEl = document.createElement('div')
+      remEl.style.cssText = 'font:10px system-ui,sans-serif;color:rgba(160,195,220,0.8)'
+      remEl.textContent = `あと${((totalM - distM) / 1000).toFixed(1)}km`
+
+      el.appendChild(topEl)
+      el.appendChild(remEl)
+
+      const css2dObj = new CSS2DObject(el)
+      css2dObj.position.set(sx, pt.y + 2.8, sz)
+      this.#scene.add(css2dObj)
+
+      this.#signs.push({ distM, postMesh, css2dObj, remEl })
+    }
+  }
+
+  #updateSignLabels(distanceM) {
+    for (const s of this.#signs) {
+      const remaining = (this.#route.totalDistanceM - s.distM) / 1000
+      s.remEl.textContent = `あと${remaining.toFixed(1)}km`
+      // 通過済みまたは遠すぎる看板は非表示
+      const ahead = s.distM - distanceM
+      s.postMesh.visible = ahead > -5 && ahead < FADE_DIST
+      s.css2dObj.visible = ahead > -5 && ahead < FADE_DIST
+    }
+  }
+
   #startLoop() {
     const tick = () => {
       requestAnimationFrame(tick)
@@ -208,6 +297,7 @@ export class EleView {
         }
       }
       this.#renderer.render(this.#scene, this.#camera)
+      this.#css2dRenderer.render(this.#scene, this.#camera)
     }
     tick()
   }
