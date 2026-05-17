@@ -47,6 +47,7 @@ export class EleView {
   #labelEl
   #css2dRenderer = null
   #signs         = []   // { distM, postMesh, css2dObj, remEl }
+  #wptSigns      = []   // { distM, postMesh, css2dObj }
 
   constructor(containerEl) {
     this.#container = containerEl
@@ -113,12 +114,14 @@ export class EleView {
     this.#updateVertexColors()
     this.#updateLabel()
     this.#buildSigns()
+    this.#buildWptSigns()
   }
 
   update(distanceM) {
     this.#targetDistM = distanceM
     this.#updateLabel()
     this.#updateSignLabels(distanceM)
+    this.#updateWptSignVisibility(distanceM)
   }
 
   resize() { this.#syncSize() }
@@ -277,7 +280,66 @@ export class EleView {
     for (const s of this.#signs) {
       const remaining = (this.#route.totalDistanceM - s.distM) / 1000
       s.remEl.textContent = `あと${remaining.toFixed(1)}km`
-      // 通過済みまたは遠すぎる看板は非表示
+      const ahead = s.distM - distanceM
+      s.postMesh.visible = ahead > -5 && ahead < FADE_DIST
+      s.css2dObj.visible = ahead > -5 && ahead < FADE_DIST
+    }
+  }
+
+  #buildWptSigns() {
+    for (const s of this.#wptSigns) {
+      this.#scene.remove(s.postMesh)
+      s.postMesh.geometry.dispose()
+      s.css2dObj.element.remove()
+      this.#scene.remove(s.css2dObj)
+    }
+    this.#wptSigns = []
+    if (!this.#pts3D || !this.#route) return
+
+    for (const wp of this.#route.waypoints) {
+      const pt   = interpPt(this.#pts3D, wp.distanceM)
+      const prev = interpPt(this.#pts3D, wp.distanceM - 1)
+      const next = interpPt(this.#pts3D, wp.distanceM + 1)
+      const tx = next.x - prev.x, tz = next.z - prev.z
+      const len = Math.sqrt(tx * tx + tz * tz) || 1
+      const rx =  tz / len, rz = -tx / len
+      const offset = ROAD_HALF_W + SHOULDER_W + 0.5  // 左端から0.5m外
+      const sx = pt.x - rx * offset
+      const sz = pt.z - rz * offset
+
+      const postGeo  = new THREE.BoxGeometry(0.15, 2.5, 0.15)
+      const postMat  = new THREE.MeshBasicMaterial({ color: 0x888888 })
+      const postMesh = new THREE.Mesh(postGeo, postMat)
+      postMesh.position.set(sx, pt.y + 1.25, sz)
+      this.#scene.add(postMesh)
+
+      const el = document.createElement('div')
+      el.style.cssText = [
+        'background:rgba(15,35,20,0.85)',
+        'border:1px solid rgba(100,200,140,0.6)',
+        'border-radius:3px',
+        'padding:3px 7px',
+        'text-align:center',
+        'pointer-events:none',
+        'white-space:nowrap',
+      ].join(';')
+
+      const nameEl = document.createElement('div')
+      nameEl.style.cssText = 'font:bold 11px system-ui,sans-serif;color:#b8f0cc'
+      nameEl.textContent = wp.name
+
+      el.appendChild(nameEl)
+
+      const css2dObj = new CSS2DObject(el)
+      css2dObj.position.set(sx, pt.y + 2.8, sz)
+      this.#scene.add(css2dObj)
+
+      this.#wptSigns.push({ distM: wp.distanceM, postMesh, css2dObj })
+    }
+  }
+
+  #updateWptSignVisibility(distanceM) {
+    for (const s of this.#wptSigns) {
       const ahead = s.distM - distanceM
       s.postMesh.visible = ahead > -5 && ahead < FADE_DIST
       s.css2dObj.visible = ahead > -5 && ahead < FADE_DIST

@@ -77,13 +77,15 @@ export function smoothElevations(points, windowM) {
 export class Route {
   #name
   #points
+  #waypoints = []
   #gradientBuckets = []
   static #ELEVATION_SMOOTHING_WINDOW_M = 300
   static #BUCKET_M = 50
 
-  constructor(name, points) {
-    this.#name   = name
-    this.#points = points
+  constructor(name, points, waypoints = []) {
+    this.#name      = name
+    this.#points    = points
+    this.#waypoints = waypoints
     this.#buildGradientBuckets()
   }
 
@@ -105,7 +107,7 @@ export class Route {
   }
 
   static fromGpx(gpxText, { windowM = 30, reversed = false } = {}) {
-    const { name, rawPoints } = parseGpx(gpxText)
+    const { name, rawPoints, wpts } = parseGpx(gpxText)
     const ordered = reversed ? [...rawPoints].reverse() : rawPoints
 
     let cumM = 0
@@ -114,12 +116,23 @@ export class Route {
       return { ...pt, distanceFromStartM: cumM }
     })
 
-    const smoothed = smoothElevations(withDist, Route.#ELEVATION_SMOOTHING_WINDOW_M)
-    return new Route(name, calculateGradients(smoothed, windowM))
+    const smoothed  = smoothElevations(withDist, Route.#ELEVATION_SMOOTHING_WINDOW_M)
+    const points    = calculateGradients(smoothed, windowM)
+    const waypoints = wpts
+      .filter(w => w.name.startsWith('「') && w.name.endsWith('」'))
+      .map(w => ({
+        lat:       w.lat,
+        lon:       w.lon,
+        name:      w.name.slice(1, -1),   // 「」を除去
+        distanceM: nearestDistM(points, w.lat, w.lon),
+      }))
+
+    return new Route(name, points, waypoints)
   }
 
-  get name()   { return this.#name }
-  get points() { return this.#points }
+  get name()      { return this.#name }
+  get points()    { return this.#points }
+  get waypoints() { return this.#waypoints }
 
   get totalDistanceM() {
     return this.#points.length > 0 ? this.#points[this.#points.length - 1].distanceFromStartM : 0
@@ -178,4 +191,13 @@ export class Route {
       lon: pa.lon + (pb.lon - pa.lon) * t,
     }
   }
+}
+
+function nearestDistM(points, lat, lon) {
+  let minD = Infinity, best = 0
+  for (const pt of points) {
+    const d = haversineM(lat, lon, pt.lat, pt.lon)
+    if (d < minD) { minD = d; best = pt.distanceFromStartM }
+  }
+  return best
 }

@@ -62,5 +62,14 @@ export function parseGpx(gpxText) {
     throw new Error(`有効なトラックポイントが不足しています（${rawPoints.length}点）`)
   }
 
-  return { name, rawPoints }
+  const wpts = []
+  for (const el of getEls(doc, 'wpt')) {
+    const lat  = parseFloat(el.getAttribute('lat'))
+    const lon  = parseFloat(el.getAttribute('lon'))
+    const name = getText(el, 'name')
+    if (isNaN(lat) || isNaN(lon) || !name) continue
+    wpts.push({ lat, lon, name })
+  }
+
+  return { name, rawPoints, wpts }
 }
