@@ -2,14 +2,14 @@ import * as THREE from 'three'
 
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
-const CAM_HEIGHT   = 1.5    // m above road
+const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
+const CAM_HEIGHT   = Y_EXAG * 1.5  // 1.5m real above road (world-space scaled)
 const LOOK_AHEAD   = 40     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
-const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
 const FADE_DIST    = 280    // m — fade to black over this distance
 const FADE_MIN     = 0.0    // fade to black; fog blends to sky beyond
-const SKY_HORIZON  = 0x0d2035
-const SKY_CSS      = 'linear-gradient(to bottom,#060b12 0%,#0d2035 60%,#0e1820 100%)'
+const SKY_HORIZON  = 0x1a3a5c
+const SKY_CSS      = 'linear-gradient(to bottom,#0a1628 0%,#1a3a5c 60%,#142030 100%)'
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
 const DARK         = 0.65
@@ -37,8 +37,11 @@ export class EleView {
   #camera
   #mesh          = null
   #dashMesh      = null
-  #dashNear      = null   // road-distance at near edge of each dash quad
-  #dashFar       = null   // road-distance at far edge of each dash quad
+  #dashNear      = null
+  #dashFar       = null
+  #edgeMesh      = null
+  #edgeNear      = null
+  #edgeFar       = null
   #pts3D         = null
   #route         = null
   #targetDistM   = 0
@@ -62,7 +65,7 @@ export class EleView {
     this.#renderer.setClearColor(0x000000, 0)  // transparent — CSS sky shows through
 
     this.#scene = new THREE.Scene()
-    this.#scene.fog = new THREE.Fog(SKY_HORIZON, 160, 310)
+    this.#scene.fog = new THREE.Fog(SKY_HORIZON, 140, 290)
 
     this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
 
@@ -92,14 +95,24 @@ export class EleView {
       this.#dashMesh.geometry.dispose()
       this.#dashMesh = null
     }
+    if (this.#edgeMesh) {
+      this.#scene.remove(this.#edgeMesh)
+      this.#edgeMesh.geometry.dispose()
+      this.#edgeMesh = null
+    }
     this.#pts3D = buildPts3D(route.points)
     this.#mesh  = buildRibbonMesh(this.#pts3D)
     this.#scene.add(this.#mesh)
-    const { mesh: dm, nearM, farM } = buildDashMesh(this.#pts3D)
+    const { mesh: dm, nearM: dNear, farM: dFar } = buildDashMesh(this.#pts3D)
     this.#dashMesh = dm
-    this.#dashNear = nearM
-    this.#dashFar  = farM
+    this.#dashNear = dNear
+    this.#dashFar  = dFar
     this.#scene.add(this.#dashMesh)
+    const { mesh: em, nearM: eNear, farM: eFar } = buildEdgeMesh(this.#pts3D)
+    this.#edgeMesh = em
+    this.#edgeNear = eNear
+    this.#edgeFar  = eFar
+    this.#scene.add(this.#edgeMesh)
     this.#currentDistM = this.#targetDistM
     this.#updateCameraAt(this.#currentDistM)
     this.#updateVertexColors()
@@ -135,7 +148,7 @@ export class EleView {
     this.#camera.position.set(cam.x, eyeY, cam.z)
     // Vertical gaze fixed at rider eye level — road rises/falls relative to this line.
     // Horizontal (x/z) tracks the route for turn responsiveness.
-    this.#camera.lookAt(look.x, eyeY - 0.2, look.z)
+    this.#camera.lookAt(look.x, eyeY - 0.5, look.z)
   }
 
   // Bake distance-based brightness fade into vertex colors for the visible window.
@@ -168,26 +181,8 @@ export class EleView {
     }
     colAttr.needsUpdate = true
 
-    if (!this.#dashMesh || !this.#dashNear) return
-    const dCol = this.#dashMesh.geometry.attributes.color
-    const near = this.#dashNear
-    let dlo = 0, dhi = near.length - 1
-    while (dlo < dhi) {
-      const dm = (dlo + dhi) >> 1
-      if (near[dm] < camDistM - 50) dlo = dm + 1; else dhi = dm
-    }
-    for (let i = dlo; i < near.length; i++) {
-      if (near[i] - camDistM > FADE_DIST + 50) break
-      // v0,v1 = near edge; v2,v3 = far edge — fade per vertex for accuracy
-      const fadeN = depthFade(near[i] - camDistM)
-      const fadeF = depthFade(this.#dashFar[i] - camDistM)
-      const b0 = i * 4 * 3
-      dCol.array[b0]      = dCol.array[b0 + 1]  = dCol.array[b0 + 2]  = fadeN
-      dCol.array[b0 + 3]  = dCol.array[b0 + 4]  = dCol.array[b0 + 5]  = fadeN
-      dCol.array[b0 + 6]  = dCol.array[b0 + 7]  = dCol.array[b0 + 8]  = fadeF
-      dCol.array[b0 + 9]  = dCol.array[b0 + 10] = dCol.array[b0 + 11] = fadeF
-    }
-    dCol.needsUpdate = true
+    fadeLineMesh(this.#dashMesh, this.#dashNear, this.#dashFar, camDistM)
+    fadeLineMesh(this.#edgeMesh, this.#edgeNear, this.#edgeFar, camDistM)
   }
 
   #updateLabel() {
@@ -443,49 +438,125 @@ function depthFade(aheadM) {
   return Math.pow(1 - t, 1.5)
 }
 
-function buildDashMesh(pts3D) {
-  const DASH_LEN = 3.0
-  const PERIOD   = 6.0    // 3m dash + 3m gap
-  const DASH_W   = 0.15   // half-width of center line
-  const Y_OFF    = 0.1    // above road surface to prevent z-fighting
-
-  const posList = []
-  const colList = []
-  const idxList = []
-  const nearM   = []   // road-distance at near edge of each quad
-  const farM    = []   // road-distance at far edge of each quad
+function buildLineMesh(pts3D, halfW, yOff, filterFn) {
+  const posList = [], colList = [], idxList = [], nearM = [], farM = []
   let vi = 0
-
   for (let i = 0; i < pts3D.length - 1; i++) {
     const pt   = pts3D[i]
     const next = pts3D[i + 1]
-    if ((pt.distM % PERIOD) > DASH_LEN) continue  // in gap phase
-
+    const segLen = next.distM - pt.distM
+    if (segLen <= 0) continue
     const tx = next.x - pt.x, tz = next.z - pt.z
-    const len = Math.sqrt(tx * tx + tz * tz) || 1
-    const rx =  tz / len,  rz = -tx / len
+    const hLen = Math.sqrt(tx * tx + tz * tz) || 1
+    const rx = tz / hLen, rz = -tx / hLen
 
-    posList.push(
-      pt.x   - rx * DASH_W,   pt.y   + Y_OFF, pt.z   - rz * DASH_W,  // v0 near-L
-      pt.x   + rx * DASH_W,   pt.y   + Y_OFF, pt.z   + rz * DASH_W,  // v1 near-R
-      next.x + rx * DASH_W,   next.y + Y_OFF, next.z + rz * DASH_W,  // v2 far-R
-      next.x - rx * DASH_W,   next.y + Y_OFF, next.z - rz * DASH_W,  // v3 far-L
-    )
-    for (let v = 0; v < 4; v++) colList.push(0, 0, 0)
-    idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
-    nearM.push(pt.distM)
-    farM.push(next.distM)
-    vi += 4
+    const intervals = filterFn(pt.distM, next.distM)
+    for (const [d0, d1] of intervals) {
+      const t0 = (d0 - pt.distM) / segLen
+      const t1 = (d1 - pt.distM) / segLen
+      const x0 = pt.x + (next.x - pt.x) * t0, y0 = pt.y + (next.y - pt.y) * t0, z0 = pt.z + (next.z - pt.z) * t0
+      const x1 = pt.x + (next.x - pt.x) * t1, y1 = pt.y + (next.y - pt.y) * t1, z1 = pt.z + (next.z - pt.z) * t1
+      posList.push(
+        x0 - rx*halfW, y0 + yOff, z0 - rz*halfW,
+        x0 + rx*halfW, y0 + yOff, z0 + rz*halfW,
+        x1 + rx*halfW, y1 + yOff, z1 + rz*halfW,
+        x1 - rx*halfW, y1 + yOff, z1 - rz*halfW,
+      )
+      for (let v = 0; v < 4; v++) colList.push(0, 0, 0)
+      idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
+      nearM.push(d0); farM.push(d1)
+      vi += 4
+    }
   }
-
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(posList), 3))
   geo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array(colList), 3))
   geo.setIndex(new THREE.BufferAttribute(new Uint32Array(idxList), 1))
-
   return {
     mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
-    nearM,
-    farM,
+    nearM, farM,
   }
+}
+
+function buildDashMesh(pts3D) {
+  const DASH_LEN = 3.0, PERIOD = 6.0
+  // Returns sub-intervals of [startD, endD] that fall in the dash phase
+  const dashIntervals = (startD, endD) => {
+    const result = []
+    const firstP = Math.floor(startD / PERIOD)
+    const lastP  = Math.floor(endD   / PERIOD)
+    for (let p = firstP; p <= lastP; p++) {
+      const s = Math.max(startD, p * PERIOD)
+      const e = Math.min(endD,   p * PERIOD + DASH_LEN)
+      if (s < e) result.push([s, e])
+    }
+    return result
+  }
+  return buildLineMesh(pts3D, 0.15, 0.10, dashIntervals)
+}
+
+function buildEdgeMesh(pts3D) {
+  const makeEdgeSide = (side) => {
+    const ox = side * ROAD_HALF_W   // lateral center offset
+    const posList = [], colList = [], idxList = [], nearM = [], farM = []
+    let vi = 0
+    for (let i = 0; i < pts3D.length - 1; i++) {
+      const pt   = pts3D[i]
+      const next = pts3D[i + 1]
+      const tx = next.x - pt.x, tz = next.z - pt.z
+      const hLen = Math.sqrt(tx * tx + tz * tz) || 1
+      const rx = tz / hLen, rz = -tx / hLen
+      const hw = 0.15
+      posList.push(
+        pt.x   + rx*(ox-hw), pt.y   + 0.05, pt.z   + rz*(ox-hw),
+        pt.x   + rx*(ox+hw), pt.y   + 0.05, pt.z   + rz*(ox+hw),
+        next.x + rx*(ox+hw), next.y + 0.05, next.z + rz*(ox+hw),
+        next.x + rx*(ox-hw), next.y + 0.05, next.z + rz*(ox-hw),
+      )
+      for (let v = 0; v < 4; v++) colList.push(0, 0, 0)
+      idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
+      nearM.push(pt.distM); farM.push(next.distM)
+      vi += 4
+    }
+    return { posList, colList, idxList, nearM, farM }
+  }
+
+  const L = makeEdgeSide(-1), R = makeEdgeSide(+1)
+  const offset = L.posList.length / 3
+  const merged = {
+    pos:  new Float32Array([...L.posList, ...R.posList]),
+    col:  new Float32Array([...L.colList, ...R.colList]),
+    idx:  new Uint32Array([...L.idxList, ...R.idxList.map(i => i + offset)]),
+    nearM: [...L.nearM, ...R.nearM],
+    farM:  [...L.farM,  ...R.farM],
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(merged.pos, 3))
+  geo.setAttribute('color',    new THREE.BufferAttribute(merged.col, 3))
+  geo.setIndex(new THREE.BufferAttribute(merged.idx, 1))
+  return {
+    mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
+    nearM: merged.nearM, farM: merged.farM,
+  }
+}
+
+function fadeLineMesh(mesh, nearM, farM, camDistM) {
+  if (!mesh || !nearM) return
+  const col = mesh.geometry.attributes.color
+  let lo = 0, hi = nearM.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (nearM[mid] < camDistM - 50) lo = mid + 1; else hi = mid
+  }
+  for (let i = lo; i < nearM.length; i++) {
+    if (nearM[i] - camDistM > FADE_DIST + 50) break
+    const fN = depthFade(nearM[i] - camDistM)
+    const fF = depthFade(farM[i]  - camDistM)
+    const b = i * 12
+    col.array[b]     = col.array[b+1]  = col.array[b+2]  = fN
+    col.array[b+3]   = col.array[b+4]  = col.array[b+5]  = fN
+    col.array[b+6]   = col.array[b+7]  = col.array[b+8]  = fF
+    col.array[b+9]   = col.array[b+10] = col.array[b+11] = fF
+  }
+  col.needsUpdate = true
 }
