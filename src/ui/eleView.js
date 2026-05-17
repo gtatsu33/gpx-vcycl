@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
@@ -45,9 +44,8 @@ export class EleView {
   #targetDistM   = 0
   #currentDistM  = 0
   #labelEl
-  #css2dRenderer = null
-  #signs         = []   // { distM, postMesh, css2dObj, remEl }
-  #wptSigns      = []   // { distM, postMesh, css2dObj }
+  #signs    = []   // { distM, postMesh, panel }
+  #wptSigns = []   // { distM, postMesh, panel }
 
   constructor(containerEl) {
     this.#container = containerEl
@@ -76,13 +74,6 @@ export class EleView {
     ].join(';')
     this.#labelEl = label
     containerEl.appendChild(label)
-
-    const css2dEl = document.createElement('div')
-    css2dEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden'
-    containerEl.appendChild(css2dEl)
-
-    this.#css2dRenderer = new CSS2DRenderer({ element: css2dEl })
-    this.#css2dRenderer.setSize(containerEl.clientWidth, containerEl.clientHeight)
 
     new ResizeObserver(() => this.#syncSize()).observe(containerEl)
     this.#syncSize()
@@ -120,8 +111,8 @@ export class EleView {
   update(distanceM) {
     this.#targetDistM = distanceM
     this.#updateLabel()
-    this.#updateSignLabels(distanceM)
-    this.#updateWptSignVisibility(distanceM)
+    this.#updateSignVisibility(distanceM, this.#signs)
+    this.#updateSignVisibility(distanceM, this.#wptSigns)
   }
 
   resize() { this.#syncSize() }
@@ -132,7 +123,6 @@ export class EleView {
     const rect = this.#container.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return
     this.#renderer.setSize(rect.width, rect.height, false)
-    this.#css2dRenderer.setSize(rect.width, rect.height)
     this.#camera.aspect = rect.width / rect.height
     this.#camera.updateProjectionMatrix()
   }
@@ -216,8 +206,9 @@ export class EleView {
     for (const s of this.#signs) {
       this.#scene.remove(s.postMesh)
       s.postMesh.geometry.dispose()
-      s.css2dObj.element.remove()
-      this.#scene.remove(s.css2dObj)
+      this.#scene.remove(s.panel)
+      s.panel.material.map.dispose()
+      s.panel.material.dispose()
     }
     this.#signs = []
     if (!this.#pts3D || !this.#route) return
@@ -225,64 +216,32 @@ export class EleView {
     const totalM = this.#route.totalDistanceM
     for (let km = 1; km * SIGN_INTERVAL_M < totalM; km++) {
       const distM = km * SIGN_INTERVAL_M
+      const { sx, sy, sz } = signPos(this.#pts3D, distM, +1)
 
-      // 3D位置: 道路右端の外側
-      const pt    = interpPt(this.#pts3D, distM)
-      const prev  = interpPt(this.#pts3D, distM - 1)
-      const next  = interpPt(this.#pts3D, distM + 1)
-      const tx = next.x - prev.x, tz = next.z - prev.z
-      const len = Math.sqrt(tx * tx + tz * tz) || 1
-      const rx =  tz / len, rz = -tx / len
-      const offset = ROAD_HALF_W + SHOULDER_W + 0.5  // 右端から0.5m外
-      const sx = pt.x + rx * offset
-      const sz = pt.z + rz * offset
-
-      // ポスト（支柱）
-      const postGeo = new THREE.BoxGeometry(0.15, 2.5, 0.15)
-      const postMat = new THREE.MeshBasicMaterial({ color: 0x888888 })
-      const postMesh = new THREE.Mesh(postGeo, postMat)
-      postMesh.position.set(sx, pt.y + 1.25, sz)
+      const postGeo  = new THREE.BoxGeometry(0.15, 2.5, 0.15)
+      const postMesh = new THREE.Mesh(postGeo, new THREE.MeshBasicMaterial({ color: 0x888888 }))
+      postMesh.position.set(sx, sy + 1.25, sz)
       this.#scene.add(postMesh)
 
-      // CSS2Dラベル（看板パネル）
-      const el = document.createElement('div')
-      el.style.cssText = [
-        'background:rgba(20,30,40,0.85)',
-        'border:1px solid rgba(140,180,220,0.6)',
-        'border-radius:3px',
-        'padding:3px 6px',
-        'text-align:center',
-        'line-height:1.4',
-        'pointer-events:none',
-        'white-space:nowrap',
-      ].join(';')
+      const panel = makeSignSprite(
+        `${km}km`,
+        `あと${((totalM - distM) / 1000).toFixed(1)}km`,
+        'rgba(20,30,40,0.92)', 'rgba(140,180,220,0.7)',
+        '#e8f0f8', 'rgba(160,195,220,0.85)',
+      )
+      panel.position.set(sx, sy + 2.5 + panel.scale.y / 2, sz)
+      this.#scene.add(panel)
 
-      const topEl = document.createElement('div')
-      topEl.style.cssText = 'font:bold 11px system-ui,sans-serif;color:#e8f0f8'
-      topEl.textContent = `${km}km`
-
-      const remEl = document.createElement('div')
-      remEl.style.cssText = 'font:10px system-ui,sans-serif;color:rgba(160,195,220,0.8)'
-      remEl.textContent = `あと${((totalM - distM) / 1000).toFixed(1)}km`
-
-      el.appendChild(topEl)
-      el.appendChild(remEl)
-
-      const css2dObj = new CSS2DObject(el)
-      css2dObj.position.set(sx, pt.y + 2.8, sz)
-      this.#scene.add(css2dObj)
-
-      this.#signs.push({ distM, postMesh, css2dObj, remEl })
+      this.#signs.push({ distM, postMesh, panel })
     }
   }
 
-  #updateSignLabels(distanceM) {
-    for (const s of this.#signs) {
-      const remaining = (this.#route.totalDistanceM - s.distM) / 1000
-      s.remEl.textContent = `あと${remaining.toFixed(1)}km`
+  #updateSignVisibility(distanceM, list) {
+    for (const s of list) {
       const ahead = s.distM - distanceM
-      s.postMesh.visible = ahead > -5 && ahead < FADE_DIST
-      s.css2dObj.visible = ahead > -5 && ahead < FADE_DIST
+      const vis = ahead > -5 && ahead < FADE_DIST
+      s.postMesh.visible = vis
+      s.panel.visible    = vis
     }
   }
 
@@ -290,59 +249,30 @@ export class EleView {
     for (const s of this.#wptSigns) {
       this.#scene.remove(s.postMesh)
       s.postMesh.geometry.dispose()
-      s.css2dObj.element.remove()
-      this.#scene.remove(s.css2dObj)
+      this.#scene.remove(s.panel)
+      s.panel.material.map.dispose()
+      s.panel.material.dispose()
     }
     this.#wptSigns = []
     if (!this.#pts3D || !this.#route) return
 
     for (const wp of this.#route.waypoints) {
-      const pt   = interpPt(this.#pts3D, wp.distanceM)
-      const prev = interpPt(this.#pts3D, wp.distanceM - 1)
-      const next = interpPt(this.#pts3D, wp.distanceM + 1)
-      const tx = next.x - prev.x, tz = next.z - prev.z
-      const len = Math.sqrt(tx * tx + tz * tz) || 1
-      const rx =  tz / len, rz = -tx / len
-      const offset = ROAD_HALF_W + SHOULDER_W + 0.5  // 左端から0.5m外
-      const sx = pt.x - rx * offset
-      const sz = pt.z - rz * offset
+      const { sx, sy, sz } = signPos(this.#pts3D, wp.distanceM, -1)
 
       const postGeo  = new THREE.BoxGeometry(0.15, 2.5, 0.15)
-      const postMat  = new THREE.MeshBasicMaterial({ color: 0x888888 })
-      const postMesh = new THREE.Mesh(postGeo, postMat)
-      postMesh.position.set(sx, pt.y + 1.25, sz)
+      const postMesh = new THREE.Mesh(postGeo, new THREE.MeshBasicMaterial({ color: 0x888888 }))
+      postMesh.position.set(sx, sy + 1.25, sz)
       this.#scene.add(postMesh)
 
-      const el = document.createElement('div')
-      el.style.cssText = [
-        'background:rgba(15,35,20,0.85)',
-        'border:1px solid rgba(100,200,140,0.6)',
-        'border-radius:3px',
-        'padding:3px 7px',
-        'text-align:center',
-        'pointer-events:none',
-        'white-space:nowrap',
-      ].join(';')
+      const panel = makeSignSprite(
+        wp.name, null,
+        'rgba(15,35,20,0.92)', 'rgba(100,200,140,0.6)',
+        '#b8f0cc', null,
+      )
+      panel.position.set(sx, sy + 2.5 + panel.scale.y / 2, sz)
+      this.#scene.add(panel)
 
-      const nameEl = document.createElement('div')
-      nameEl.style.cssText = 'font:bold 11px system-ui,sans-serif;color:#b8f0cc'
-      nameEl.textContent = wp.name
-
-      el.appendChild(nameEl)
-
-      const css2dObj = new CSS2DObject(el)
-      css2dObj.position.set(sx, pt.y + 2.8, sz)
-      this.#scene.add(css2dObj)
-
-      this.#wptSigns.push({ distM: wp.distanceM, postMesh, css2dObj })
-    }
-  }
-
-  #updateWptSignVisibility(distanceM) {
-    for (const s of this.#wptSigns) {
-      const ahead = s.distM - distanceM
-      s.postMesh.visible = ahead > -5 && ahead < FADE_DIST
-      s.css2dObj.visible = ahead > -5 && ahead < FADE_DIST
+      this.#wptSigns.push({ distM: wp.distanceM, postMesh, panel })
     }
   }
 
@@ -359,13 +289,77 @@ export class EleView {
         }
       }
       this.#renderer.render(this.#scene, this.#camera)
-      this.#css2dRenderer.render(this.#scene, this.#camera)
     }
     tick()
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+// 道路端の3D座標を返す。side: +1=右, -1=左
+function signPos(pts3D, distM, side) {
+  const pt   = interpPt(pts3D, distM)
+  const prev = interpPt(pts3D, distM - 1)
+  const next = interpPt(pts3D, distM + 1)
+  const tx = next.x - prev.x, tz = next.z - prev.z
+  const len = Math.sqrt(tx * tx + tz * tz) || 1
+  const rx =  tz / len, rz = -tx / len
+  const offset = ROAD_HALF_W + SHOULDER_W + 0.5
+  return { sx: pt.x + rx * offset * side, sy: pt.y, sz: pt.z + rz * offset * side }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y)
+  ctx.arcTo(x + w, y, x + w, y + r, r)
+  ctx.lineTo(x + w, y + h - r)
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
+  ctx.lineTo(x + r, y + h)
+  ctx.arcTo(x, y + h, x, y + h - r, r)
+  ctx.lineTo(x, y + r)
+  ctx.arcTo(x, y, x + r, y, r)
+  ctx.closePath()
+}
+
+function makeSignSprite(topText, bottomText, bgColor, borderColor, topColor, bottomColor) {
+  const CW = 256
+  const CH = bottomText ? 120 : 80
+  const canvas = document.createElement('canvas')
+  canvas.width = CW; canvas.height = CH
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = bgColor
+  roundRect(ctx, 0, 0, CW, CH, 10)
+  ctx.fill()
+
+  ctx.strokeStyle = borderColor
+  ctx.lineWidth = 4
+  roundRect(ctx, 2, 2, CW - 4, CH - 4, 8)
+  ctx.stroke()
+
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  if (bottomText) {
+    ctx.fillStyle = topColor
+    ctx.font = 'bold 50px system-ui, sans-serif'
+    ctx.fillText(topText, CW / 2, 50)
+    ctx.fillStyle = bottomColor
+    ctx.font = '34px system-ui, sans-serif'
+    ctx.fillText(bottomText, CW / 2, 96)
+  } else {
+    ctx.fillStyle = topColor
+    ctx.font = 'bold 44px system-ui, sans-serif'
+    ctx.fillText(topText, CW / 2, CH / 2)
+  }
+
+  const tex = new THREE.CanvasTexture(canvas)
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true })
+  const sprite = new THREE.Sprite(mat)
+  const worldW = 3.0
+  sprite.scale.set(worldW, worldW * CH / CW, 1)
+  return sprite
+}
 
 function buildPts3D(points) {
   const lat0   = points[0].lat
