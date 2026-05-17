@@ -8,8 +8,14 @@ const LOOK_AHEAD   = 40     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
 const FADE_DIST    = 280    // m — fade to black over this distance
 const FADE_MIN     = 0.0    // fade to black; fog blends to sky beyond
-const SKY_HORIZON  = 0x1a3a5c
-const SKY_CSS      = 'linear-gradient(to bottom,#0a1628 0%,#1a3a5c 60%,#142030 100%)'
+const FOG_NEAR     = 20     // m — fog starts here
+const FOG_FAR      = 220    // m — fog fully opaque here
+const LOOK_Y_OFFSET = 4.0  // lookAt Y = eyeY + this; negative = look down (more ground), positive = look up (more sky)
+// [夜間] const SKY_HORIZON  = 0x1a3a5c
+// [夜間] const SKY_CSS      = 'linear-gradient(to bottom,#0a1628 0%,#1a3a5c 60%,#142030 100%)'
+// [昼間]
+const SKY_HORIZON  = 0x4a7ab5
+const SKY_CSS      = 'linear-gradient(to bottom,#1a3a6c 0%,#4a7ab5 58%,#1a0e05 65%,#7a5020 100%)'
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
 const DARK         = 0.65
@@ -65,7 +71,7 @@ export class EleView {
     this.#renderer.setClearColor(0x000000, 0)  // transparent — CSS sky shows through
 
     this.#scene = new THREE.Scene()
-    this.#scene.fog = new THREE.Fog(SKY_HORIZON, 140, 290)
+    this.#scene.fog = new THREE.Fog(SKY_HORIZON, FOG_NEAR, FOG_FAR)
 
     this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
 
@@ -148,7 +154,7 @@ export class EleView {
     this.#camera.position.set(cam.x, eyeY, cam.z)
     // Vertical gaze fixed at rider eye level — road rises/falls relative to this line.
     // Horizontal (x/z) tracks the route for turn responsiveness.
-    this.#camera.lookAt(look.x, eyeY - 0.5, look.z)
+    this.#camera.lookAt(look.x, eyeY + LOOK_Y_OFFSET, look.z)
   }
 
   // Bake distance-based brightness fade into vertex colors for the visible window.
@@ -513,7 +519,7 @@ function buildEdgeMesh(pts3D) {
         next.x + rx*(ox+hw), next.y + 0.05, next.z + rz*(ox+hw),
         next.x + rx*(ox-hw), next.y + 0.05, next.z + rz*(ox-hw),
       )
-      for (let v = 0; v < 4; v++) colList.push(0, 0, 0)
+      for (let v = 0; v < 4; v++) colList.push(1, 1, 1)
       idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
       nearM.push(pt.distM); farM.push(next.distM)
       vi += 4
