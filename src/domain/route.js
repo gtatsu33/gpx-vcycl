@@ -123,7 +123,7 @@ export class Route {
       .map(w => ({
         lat:       w.lat,
         lon:       w.lon,
-        name:      w.name.slice(1, -1),   // 「」を除去
+        name:      w.name.slice(1, -1).replace(/[（(][^）)]*[）)]/g, '').trim(),
         distanceM: nearestDistM(points, w.lat, w.lon),
       }))
 
