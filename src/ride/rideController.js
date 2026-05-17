@@ -64,8 +64,10 @@ export class RideController {
     smoothingWindowSec       = 3,
     gradientUpdateIntervalMs = 1000,
     trainerDifficulty        = 0.5,
+    altitudeEffectEnabled    = true,
   }) {
     this.#simulator              = new RideSimulator(route, params)
+    this.#simulator.altitudeEffectEnabled = altitudeEffectEnabled
     this.#route                  = route
     this.#mapView                = mapView
     this.#hudView                = hudView

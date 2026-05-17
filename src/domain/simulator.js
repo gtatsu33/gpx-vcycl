@@ -5,6 +5,9 @@ export class RideSimulator {
   #params
   #s       // mutable state object
   #paused = false
+  #altitudeEffectEnabled = true
+
+  set altitudeEffectEnabled(v) { this.#altitudeEffectEnabled = v }
 
   /** @param {import('./route.js').Route} route */
   constructor(route, params) {
@@ -25,7 +28,7 @@ export class RideSimulator {
 
     const gradient    = this.#route.getGradientAt(s.distanceM)
     const elevM       = this.#route.getElevationAt(s.distanceM) ?? 0
-    const effectivePowerW = powerW * altitudeFactor(elevM)
+    const effectivePowerW = this.#altitudeEffectEnabled ? powerW * altitudeFactor(elevM) : powerW
     const newV        = stepVelocity(effectivePowerW, gradient, s.velocityMs, dtSec, this.#params)
     const prevDist   = s.distanceM
 

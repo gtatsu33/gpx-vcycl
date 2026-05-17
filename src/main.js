@@ -127,6 +127,9 @@ async function loadSettings() {
   db.get('settings', 'trainerControlEnabled').then((v) => {
     document.getElementById('trainer-control-toggle').checked = v ?? true
   })
+  db.get('settings', 'altitudeEffectEnabled').then((v) => {
+    document.getElementById('altitude-effect-toggle').checked = v ?? true
+  })
   db.get('settings', 'trainerDifficulty').then((v) => {
     const val = v ?? 0.5
     document.getElementById('trainer-difficulty-input').value = val
@@ -153,7 +156,8 @@ async function saveSettings() {
     db.put('settings', num('cda-input'),          'cdA'),
     db.put('settings', num('crr-input'),          'crr'),
     db.put('settings', num('smoothing-input'),    'smoothingWindowSec'),
-    db.put('settings', document.getElementById('trainer-control-toggle').checked, 'trainerControlEnabled'),
+    db.put('settings', document.getElementById('trainer-control-toggle').checked,  'trainerControlEnabled'),
+    db.put('settings', document.getElementById('altitude-effect-toggle').checked,   'altitudeEffectEnabled'),
     db.put('settings', num('trainer-difficulty-input'), 'trainerDifficulty'),
     db.put('settings', num('ftp-input'), 'ftpW'),
   ])
@@ -232,10 +236,11 @@ startBtn.addEventListener('click', async () => {
     if (!ok) return
   }
 
-  const params             = await loadPhysicsParams()
-  const smoothingWindowSec = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
-  const trainerEnabled     = document.getElementById('trainer-control-toggle').checked
-  const trainerDifficulty  = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
+  const params                 = await loadPhysicsParams()
+  const smoothingWindowSec     = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
+  const trainerEnabled         = document.getElementById('trainer-control-toggle').checked
+  const trainerDifficulty      = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
+  const altitudeEffectEnabled  = document.getElementById('altitude-effect-toggle').checked
 
   clearRouteSession()
   rideController = new RideController({
@@ -249,6 +254,7 @@ startBtn.addEventListener('click', async () => {
     getLiveData,
     smoothingWindowSec,
     trainerDifficulty,
+    altitudeEffectEnabled,
     ftmsClient:  trainerEnabled ? ftmsClient : null,
     onFinished: (summary) => {
       rideController = null
@@ -375,11 +381,12 @@ async function init() {
     if (routeSession) {
       const record = await getRoute(routeSession.routeId)
       if (record) {
-        const route              = Route.fromGpx(record.gpxText)
-        const params             = await loadPhysicsParams()
-        const smoothingWindowSec = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
-        const trainerEnabled     = document.getElementById('trainer-control-toggle').checked
-        const trainerDifficulty  = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
+        const route                 = Route.fromGpx(record.gpxText)
+        const params                = await loadPhysicsParams()
+        const smoothingWindowSec    = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
+        const trainerEnabled        = document.getElementById('trainer-control-toggle').checked
+        const trainerDifficulty     = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
+        const altitudeEffectEnabled = document.getElementById('altitude-effect-toggle').checked
 
         selectedRoute     = route
         selectedRouteId   = routeSession.routeId
@@ -390,6 +397,7 @@ async function init() {
         rideController = new RideController({
           route, routeId: routeSession.routeId, routeName: routeSession.routeName,
           params, mapView, hudView, eleView, getLiveData, smoothingWindowSec, trainerDifficulty,
+          altitudeEffectEnabled,
           ftmsClient: trainerEnabled ? ftmsClient : null,
           onFinished: (summary) => {
             rideController = null
