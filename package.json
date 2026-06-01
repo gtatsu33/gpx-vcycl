@@ -7,8 +7,9 @@
     "dev": "vite --config vite.config.local.js",
     "dev:ipad": "vite --mode https --config vite.config.local.js",
     "build": "vite build",
-    "preview": "vite preview",
-    "test": "vitest run"
+    "preview": "npm run build && wrangler dev",
+    "test": "vitest run",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "idb": "^8.0.0",
@@ -16,9 +17,11 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.39.0",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "jsdom": "^29.1.1",
     "vite": "^8.0.14",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "wrangler": "^4.95.0"
   }
 }
