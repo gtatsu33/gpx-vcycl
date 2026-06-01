@@ -16,7 +16,7 @@ export function startAuthorization() {
 
 /** 認可コードをトークンに交換してDBに保存する（サーバー経由でSecretを秘匿） */
 export async function exchangeCode(code) {
-  const res = await fetch('/.netlify/functions/strava-exchange', {
+  const res = await fetch('/strava-exchange', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ code }),
@@ -42,7 +42,7 @@ export async function getValidAccessToken() {
 
   if (tokens.expiresAt > Date.now() / 1000 + 60) return tokens.accessToken
 
-  const res = await fetch('/.netlify/functions/strava-refresh', {
+  const res = await fetch('/strava-refresh', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ refresh_token: tokens.refreshToken }),
