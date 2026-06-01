@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:ipad": "vite --mode https",
-    "build": "vite build",
+    "dev": "vite --config vite.config.local.js",
+    "dev:ipad": "vite --mode https --config vite.config.local.js",
+    "build": "vite build --config vite.config.prod.js",
     "preview": "vite preview",
     "test": "vitest run"
   },
