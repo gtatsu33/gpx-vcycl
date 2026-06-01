@@ -25,6 +25,7 @@ export class RideController {
   #startedAt     = null
   #samples       = []
   #lastSampleAt  = 0
+  #lastTickAt    = 0
 
   // Trainer control
   #ftmsClient               = null
@@ -98,6 +99,7 @@ export class RideController {
     this.#startedAt    = new Date()
     this.#samples      = []
     this.#lastSampleAt = 0
+    this.#lastTickAt   = Date.now()
     this.#simulator.resume()
     this.#intervalId = setInterval(() => this.#tick(), TICK_MS)
   }
@@ -162,13 +164,17 @@ export class RideController {
     this.#startedAt    = new Date(startedAt)
     this.#samples      = [...samples]
     this.#lastSampleAt = Date.now()  // 復元直後の不要なサンプル記録を防ぐ
+    this.#lastTickAt   = Date.now()
     this.#simulator.restoreSimState(simState)
     this.#paused       = true
     this.#intervalId   = setInterval(() => this.#tick(), TICK_MS)
   }
 
   #tick() {
-    const now = Date.now()
+    const now     = Date.now()
+    const dtSec   = Math.min((now - this.#lastTickAt) / 1000, 0.5)  // cap at 0.5s against long pauses
+    this.#lastTickAt = now
+
     const { powerW, cadenceRpm, heartRateBpm } = this.#getLiveData()
 
     this.#powerAvg.push(powerW, now)
@@ -178,7 +184,7 @@ export class RideController {
     const smoothCadence = this.#cadenceAvg.average
     const torqueNm      = calcTorque(smoothPowerW, smoothCadence)
 
-    this.#simulator.tick(smoothPowerW, TICK_MS / 1000)
+    this.#simulator.tick(smoothPowerW, dtSec)
 
     const state = this.#simulator.getState()
     this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg, state.currentGradientPercent)
