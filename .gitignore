@@ -15,6 +15,5 @@ certs/
 # Claude
 .claude/
 
-
-# Local Netlify folder
-.netlify
+# Cloudflare
+.wrangler
