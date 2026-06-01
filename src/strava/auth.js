@@ -21,8 +21,8 @@ export async function exchangeCode(code) {
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ code }),
   })
-  if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`)
-  const data   = await res.json()
+  const data = await res.json()
+  if (!res.ok) throw new Error(`Token exchange failed: ${res.status} ${data.message ?? JSON.stringify(data)}`)
   const tokens = {
     accessToken:  data.access_token,
     refreshToken: data.refresh_token,

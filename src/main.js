@@ -330,6 +330,7 @@ async function init() {
       stravaJustConnected = true
     } catch (err) {
       console.error('Strava auth failed:', err)
+      showToast(`Strava認証失敗: ${err.message}`, 8000)
     }
     history.replaceState({}, '', window.location.pathname)
   }
