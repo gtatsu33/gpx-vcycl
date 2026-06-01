@@ -3,14 +3,14 @@ import * as THREE from 'three'
 const ROAD_HALF_W  = 4.0
 const SHOULDER_W   = 2.0
 const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
-const CAM_HEIGHT   = Y_EXAG * 1.5  // 1.5m real above road (world-space scaled)
+const CAM_HEIGHT   = Y_EXAG * 1.8  // 1.8m real above road (world-space scaled)
 const LOOK_AHEAD   = 5     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
 const FADE_DIST    = 280    // m — fade to black over this distance
 const FADE_MIN     = 0.0    // fade to black; fog blends to sky beyond
 const FOG_NEAR     = 20     // m — fog starts here
 const FOG_FAR      = 220    // m — fog fully opaque here
-const LOOK_Y_OFFSET = 4.0  // lookAt Y = eyeY + this; negative = look down (more ground), positive = look up (more sky)
+const LOOK_Y_OFFSET = 0.0  // lookAt Y = eyeY + this; 0 = horizontal gaze
 // [夜間] const SKY_HORIZON  = 0x1a3a5c
 // [夜間] const SKY_CSS      = 'linear-gradient(to bottom,#0a1628 0%,#1a3a5c 60%,#142030 100%)'
 // [昼間]
