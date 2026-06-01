@@ -235,6 +235,24 @@ export class EleView {
 
       this.#signs.push({ distM, postMesh, panel })
     }
+
+    // Goal sign at the finish line
+    const { sx: gx, sy: gy, sz: gz } = signPos(this.#pts3D, totalM, +1)
+    const goalPost = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 2.5, 0.15),
+      new THREE.MeshBasicMaterial({ color: 0xffd700 }),
+    )
+    goalPost.position.set(gx, gy + 1.25, gz)
+    this.#scene.add(goalPost)
+
+    const goalPanel = makeSignSprite(
+      'ゴール', null,
+      'rgba(20,40,10,0.92)', 'rgba(220,180,0,0.85)',
+      '#ffd700', null,
+    )
+    goalPanel.position.set(gx, gy + 2.5 + goalPanel.scale.y / 2, gz)
+    this.#scene.add(goalPanel)
+    this.#signs.push({ distM: totalM, postMesh: goalPost, panel: goalPanel })
   }
 
   #updateSignVisibility(distanceM, list) {
