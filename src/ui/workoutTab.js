@@ -131,6 +131,8 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
   let controller      = null
   let isPaused        = false
   let sessionRestored = false
+  let baseFtpW        = null
+  let pseudoFtpW      = null
 
   // ── セッション永続化 ────────────────────────────────────────────────────────
   const SESSION_KEY = 'workout-session'
@@ -149,14 +151,16 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
 
   // ── コントローラ起動（新規・復元共通） ─────────────────────────────────────
   async function launchController(segments, ftpW, checkpoint = null) {
+    baseFtpW   = getFtpW()
+    pseudoFtpW = getFtpW()
     const params = getPhysicsParams ? await getPhysicsParams() : null
     controller = new WorkoutController({
       segments,
-      ftpW,
+      ftpW: pseudoFtpW,
       getLiveData,
       ftmsClient,
       params,
-      onStateUpdate: (state) => updateRunUI(state, segments, ftpW),
+      onStateUpdate: (state) => updateRunUI(state, segments),
       onFinished:    (summary) => {
         controller = null
         clearSession()
@@ -167,7 +171,8 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
       onAutoResume: () => { isPaused = false; pauseBtn.textContent = '⏸ 一時停止' },
     })
     buildProgressSvg(progressSvg, segments)
-    buildSegmentList(segListEl, segments, ftpW)
+    buildSegmentList(segListEl, segments, pseudoFtpW)
+    updateFtpDisplay()
     setRunningState(true)
     if (checkpoint) {
       controller.restoreFrom(checkpoint)
@@ -224,6 +229,22 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     clearSession()
     setRunningState(false)
     if (summary) onWorkoutEnd(summary)
+  })
+
+  document.getElementById('wo-ftp-up').addEventListener('click', () => {
+    if (!controller) return
+    pseudoFtpW += 5
+    controller.setFtpW(pseudoFtpW)
+    refreshSegLabels(pseudoFtpW)
+    updateFtpDisplay()
+  })
+
+  document.getElementById('wo-ftp-dn').addEventListener('click', () => {
+    if (!controller) return
+    pseudoFtpW = Math.max(50, pseudoFtpW - 5)
+    controller.setFtpW(pseudoFtpW)
+    refreshSegLabels(pseudoFtpW)
+    updateFtpDisplay()
   })
 
   function setRunningState(running) {
@@ -315,7 +336,7 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
 
   // ── Running UI ──────────────────────────────────────────────────────────────
 
-  function updateRunUI(state, segments, ftpW) {
+  function updateRunUI(state, segments) {
     setText('wo-hud-time',    fmtTime(state.elapsedS))
     setText('wo-hud-power',   Math.round(state.powerW))
     setText('wo-hud-cadence', Math.round(state.cadenceRpm))
@@ -323,8 +344,8 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     setText('wo-hud-target',  state.targetPowerW !== null ? Math.round(state.targetPowerW) : '--')
 
     // パワーカードの背景色をFTPゾーンカラーに
-    const targetColor = ftpColor(state.targetPowerW !== null ? state.targetPowerW / ftpW : 0)
-    const actualColor = ftpColor(state.powerW / ftpW)
+    const targetColor = ftpColor(state.targetPowerW !== null ? state.targetPowerW / pseudoFtpW : 0)
+    const actualColor = ftpColor(state.powerW / pseudoFtpW)
     setHudItemColor('wo-hud-target-item', targetColor)
     setHudItemColor('wo-hud-power-item',  actualColor)
 
@@ -344,7 +365,13 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     updateAlerts(state, targetCad)
 
     // Scroll segment list
-    scrollSegList(state.segmentIdx)
+    let segStartS = 0
+    for (let i = 0; i < state.segmentIdx; i++) segStartS += segments[i].durationS
+    const curSeg = segments[state.segmentIdx]
+    const segElapsedS = state.elapsedS - segStartS
+    const segProgress   = curSeg ? Math.min(1, segElapsedS / curSeg.durationS) : 0
+    const segRemainingS = curSeg ? Math.max(0, curSeg.durationS - segElapsedS) : 0
+    scrollSegList(state.segmentIdx, segProgress, segRemainingS)
 
     // Move progress cursor
     updateProgressCursor(progressSvg, state.elapsedS, state.totalS)
@@ -396,20 +423,49 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
       row.dataset.segColor    = color
       row.style.background    = hexWithAlpha(color, 0.3)
       row.style.borderColor   = color
-      row.textContent = segLabel(seg, ftpW)
+      row.innerHTML = `<span class="wo-seg-label">${segLabel(seg, ftpW)}</span><span class="wo-seg-remaining"></span>`
       container.appendChild(row)
     }
   }
 
-  function scrollSegList(idx) {
+  function scrollSegList(idx, segProgress = 0, segRemainingS = 0) {
     const rows = segListEl.querySelectorAll('.wo-seg-row')
     rows.forEach((r, i) => {
       const isCurrent = i === idx
       r.classList.toggle('current', isCurrent)
-      const color = r.dataset.segColor || '#888888'
-      r.style.background = hexWithAlpha(color, isCurrent ? 0.72 : 0.3)
+      const color  = r.dataset.segColor || '#888888'
+      const remEl  = r.querySelector('.wo-seg-remaining')
+      if (isCurrent) {
+        const pct = (segProgress * 100).toFixed(1)
+        r.style.background =
+          `linear-gradient(to right, ${hexWithAlpha(color, 0.3)} ${pct}%, ${hexWithAlpha(color, 0.72)} ${pct}%)`
+        if (remEl) remEl.textContent = fmtDurS(Math.ceil(segRemainingS))
+      } else {
+        r.style.background = hexWithAlpha(color, 0.3)
+        if (remEl) remEl.textContent = ''
+      }
     })
     rows[idx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+
+  function updateFtpDisplay() {
+    if (pseudoFtpW === null) return
+    const delta   = pseudoFtpW - baseFtpW
+    const sign    = delta >= 0 ? '+' : ''
+    const deltaEl = document.getElementById('wo-ftp-delta')
+    setText('wo-ftp-val', pseudoFtpW)
+    if (deltaEl) {
+      deltaEl.textContent = `Δ${sign}${delta}W`
+      deltaEl.className   = delta > 0 ? 'positive' : delta < 0 ? 'negative' : ''
+    }
+  }
+
+  function refreshSegLabels(ftpW) {
+    segListEl.querySelectorAll('.wo-seg-row').forEach((r, i) => {
+      const labelEl = r.querySelector('.wo-seg-label')
+      if (labelEl && selectedWorkout?.segments[i])
+        labelEl.textContent = segLabel(selectedWorkout.segments[i], ftpW)
+    })
   }
 }
 

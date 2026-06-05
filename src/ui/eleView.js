@@ -52,7 +52,6 @@ export class EleView {
   #route         = null
   #targetDistM   = 0
   #currentDistM  = 0
-  #labelEl
   #signs    = []   // { distM, postMesh, panel }
   #wptSigns = []   // { distM, postMesh, panel }
 
@@ -74,15 +73,6 @@ export class EleView {
     this.#scene.fog = new THREE.Fog(SKY_HORIZON, FOG_NEAR, FOG_FAR)
 
     this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
-
-    const label = document.createElement('div')
-    label.style.cssText = [
-      'position:absolute;inset:0;pointer-events:none',
-      'display:flex;justify-content:space-between;align-items:flex-start',
-      'padding:6px 8px;font:11px system-ui,sans-serif;color:rgba(160,195,220,0.75)',
-    ].join(';')
-    this.#labelEl = label
-    containerEl.appendChild(label)
 
     new ResizeObserver(() => this.#syncSize()).observe(containerEl)
     this.#syncSize()
@@ -122,14 +112,12 @@ export class EleView {
     this.#currentDistM = this.#targetDistM
     this.#updateCameraAt(this.#currentDistM)
     this.#updateVertexColors()
-    this.#updateLabel()
     this.#buildSigns()
     this.#buildWptSigns()
   }
 
   update(distanceM) {
     this.#targetDistM = distanceM
-    this.#updateLabel()
     this.#updateSignVisibility(distanceM, this.#signs)
     this.#updateSignVisibility(distanceM, this.#wptSigns)
   }
@@ -189,18 +177,6 @@ export class EleView {
 
     fadeLineMesh(this.#dashMesh, this.#dashNear, this.#dashFar, camDistM)
     fadeLineMesh(this.#edgeMesh, this.#edgeNear, this.#edgeFar, camDistM)
-  }
-
-  #updateLabel() {
-    if (!this.#route) { this.#labelEl.innerHTML = ''; return }
-    const totalDistM = this.#route.totalDistanceM
-    const aheadM     = Math.min(500, totalDistM - this.#targetDistM)
-    const e0 = this.#route.getElevationAt(this.#targetDistM)
-    const e1 = this.#route.getElevationAt(this.#targetDistM + aheadM)
-    const avg  = (e0 !== null && e1 !== null) ? ((e1 - e0) / aheadM) * 100 : 0
-    const sign = avg >= 0 ? '+' : ''
-    this.#labelEl.innerHTML =
-      `<span>Ahead ${Math.round(aheadM)}m</span><span>avg ${sign}${avg.toFixed(1)}%</span>`
   }
 
   #buildSigns() {

@@ -151,6 +151,8 @@ export class WorkoutController {
     return this.#segments.reduce((s, seg) => s + seg.durationS, 0)
   }
 
+  setFtpW(ftpW) { this.#ftpW = ftpW }
+
   start() {
     if (this.#intervalId) return
     this.#paused      = false
