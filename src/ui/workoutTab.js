@@ -26,31 +26,14 @@ function renderProfileSvg(svg, segments, w = 400, h = 60) {
 
   // FTP上限（グラフ表示の最高点）
   let maxFtp = 1.0
-  for (const seg of segments) {
-    if (seg.type === 'intervals') maxFtp = Math.max(maxFtp, seg.onPowerFtp)
-    else maxFtp = Math.max(maxFtp, seg.powerHighFtp)
-  }
+  for (const seg of segments) maxFtp = Math.max(maxFtp, seg.powerHighFtp)
   maxFtp = Math.max(maxFtp, 1.25)
   const scaleY = (ftp) => h - (ftp / maxFtp) * usableH
 
   const rects = []
   let x = 0
   for (const seg of segments) {
-    if (seg.type === 'intervals') {
-      const cycleS = seg.onDurationS + seg.offDurationS
-      const cycles = Math.round(seg.repeatCount)
-      for (let i = 0; i < cycles; i++) {
-        const xOn  = toX(x)
-        const wOn  = toX(seg.onDurationS)
-        const hOn  = scaleY(0) - scaleY(seg.onPowerFtp)
-        rects.push(`<rect x="${xOn.toFixed(1)}" y="${scaleY(seg.onPowerFtp).toFixed(1)}" width="${wOn.toFixed(1)}" height="${hOn.toFixed(1)}" fill="${ftpColor(seg.onPowerFtp)}"/>`)
-        const xOff = toX(x + seg.onDurationS)
-        const wOff = toX(seg.offDurationS)
-        const hOff = scaleY(0) - scaleY(seg.offPowerFtp)
-        if (hOff > 0) rects.push(`<rect x="${xOff.toFixed(1)}" y="${scaleY(seg.offPowerFtp).toFixed(1)}" width="${wOff.toFixed(1)}" height="${hOff.toFixed(1)}" fill="${ftpColor(seg.offPowerFtp)}"/>`)
-        x += cycleS
-      }
-    } else if (seg.type === 'ramp') {
+    if (seg.type === 'ramp') {
       // rampは多角形で描画
       const STEPS = 20
       const pts   = [`${toX(x).toFixed(1)},${h}`]
@@ -100,15 +83,13 @@ function segLabel(seg, ftpW) {
   switch (seg.type) {
     case 'steady':    return `${w(seg.powerLowFtp)}  ${fmtDurS(seg.durationS)}`
     case 'ramp':      return `${w(seg.powerLowFtp)} → ${w(seg.powerHighFtp)}  ${fmtDurS(seg.durationS)}`
-    case 'intervals': return `( ${w(seg.onPowerFtp)} ${fmtDurS(seg.onDurationS)} / ${w(seg.offPowerFtp)} ${fmtDurS(seg.offDurationS)} ) ×${seg.repeatCount}  ${fmtDurS(seg.durationS)}`
     case 'free':      return `Free  ${fmtDurS(seg.durationS)}`
     default:          return fmtDurS(seg.durationS)
   }
 }
 
 function segFtpForColor(seg) {
-  if (seg.type === 'intervals') return seg.onPowerFtp
-  if (seg.type === 'free')      return 0
+  if (seg.type === 'free') return 0
   return seg.powerHighFtp
 }
 

@@ -41,12 +41,6 @@ function calcTargetW(seg, t, ftpW) {
       const ftp = seg.powerLowFtp + (seg.powerHighFtp - seg.powerLowFtp) * t
       return Math.round(ftp * ftpW)
     }
-    case 'intervals': {
-      const cycleS  = seg.onDurationS + seg.offDurationS
-      const posInCycle = (t * seg.durationS) % cycleS
-      const isOn    = posInCycle < seg.onDurationS
-      return Math.round((isOn ? seg.onPowerFtp : seg.offPowerFtp) * ftpW)
-    }
     case 'free':
       return null
   }

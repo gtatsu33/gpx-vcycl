@@ -41,11 +41,10 @@ function parseSteady(el) {
   }
 }
 
-function parseRamp(el, invert = false) {
-  const dur   = attr(el, 'Duration', 'duration') ?? 0
-  let lo      = attr(el, 'PowerLow', 'powerLow') ?? 0.5
-  let hi      = attr(el, 'PowerHigh', 'powerHigh') ?? 1.0
-  if (invert) [lo, hi] = [hi, lo]
+function parseRamp(el) {
+  const dur = attr(el, 'Duration', 'duration') ?? 0
+  const lo  = attr(el, 'PowerLow', 'powerLow') ?? 0.5
+  const hi  = attr(el, 'PowerHigh', 'powerHigh') ?? 1.0
   return {
     type: 'ramp',
     durationS: dur,
@@ -61,18 +60,13 @@ function parseIntervals(el) {
   const offD   = attr(el, 'OffDuration', 'offDuration') ?? 30
   const onP    = attr(el, 'OnPower', 'onPower') ?? 1.0
   const offP   = attr(el, 'OffPower', 'offPower') ?? 0.5
-  return {
-    type: 'intervals',
-    durationS: (onD + offD) * repeat,
-    powerLowFtp: offP,
-    powerHighFtp: onP,
-    cadenceRpm: cadence(el),
-    repeatCount: repeat,
-    onDurationS: onD,
-    offDurationS: offD,
-    onPowerFtp: onP,
-    offPowerFtp: offP,
+  const cad    = cadence(el)
+  const segs   = []
+  for (let i = 0; i < repeat; i++) {
+    segs.push({ type: 'steady', durationS: onD,  powerLowFtp: onP,  powerHighFtp: onP,  cadenceRpm: cad })
+    segs.push({ type: 'steady', durationS: offD, powerLowFtp: offP, powerHighFtp: offP, cadenceRpm: cad })
   }
+  return segs
 }
 
 function parseFreeRide(el) {
@@ -110,9 +104,9 @@ export function parseZwo(xmlText) {
     } else if (tag === 'Warmup') {
       segments.push(parseRamp(child, false))
     } else if (tag === 'Cooldown') {
-      segments.push(parseRamp(child, true))
+      segments.push(parseRamp(child))
     } else if (tag === 'IntervalsT') {
-      segments.push(parseIntervals(child))
+      segments.push(...parseIntervals(child))
     } else if (tag === 'FreeRide') {
       segments.push(parseFreeRide(child))
     }
