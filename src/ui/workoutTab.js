@@ -247,6 +247,14 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     updateFtpDisplay()
   })
 
+  document.getElementById('wo-ftp-reset').addEventListener('click', () => {
+    if (!controller) return
+    pseudoFtpW = baseFtpW
+    controller.setFtpW(pseudoFtpW)
+    refreshSegLabels(pseudoFtpW)
+    updateFtpDisplay()
+  })
+
   function setRunningState(running) {
     prePanel.hidden = running
     runPanel.hidden = !running
@@ -455,7 +463,7 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     const deltaEl = document.getElementById('wo-ftp-delta')
     setText('wo-ftp-val', pseudoFtpW)
     if (deltaEl) {
-      deltaEl.textContent = `Δ${sign}${delta}W`
+      deltaEl.textContent = `${sign}${delta}W`
       deltaEl.className   = delta > 0 ? 'positive' : delta < 0 ? 'negative' : ''
     }
   }
