@@ -345,6 +345,13 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     // Target cadence
     const targetCad = state.segment?.cadenceRpm ?? null
     setText('wo-hud-target-cadence', targetCad !== null ? Math.round(targetCad) : 'FREE')
+    if (targetCad !== null) {
+      setHudItemColor('wo-hud-target-cadence-item', cadenceColor(targetCad))
+      setHudItemColor('wo-hud-cadence-item',        cadenceColor(state.cadenceRpm))
+    } else {
+      clearHudItemColor('wo-hud-target-cadence-item')
+      clearHudItemColor('wo-hud-cadence-item')
+    }
 
     // Remaining time
     const remS = Math.max(0, state.totalS - state.elapsedS)
@@ -434,7 +441,15 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
         if (remEl) remEl.textContent = ''
       }
     })
-    rows[idx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    const currentRow = rows[idx]
+    if (currentRow) {
+      const containerH = segListEl.clientHeight
+      const rowBottom  = currentRow.offsetTop + currentRow.offsetHeight
+      const minScroll  = rowBottom - containerH * (2 / 3)
+      if (segListEl.scrollTop < minScroll) {
+        segListEl.scrollTo({ top: Math.max(0, minScroll), behavior: 'smooth' })
+      }
+    }
   }
 
   function updateFtpDisplay() {
@@ -488,8 +503,22 @@ function updateProgressCursor(svg, elapsedS, totalS) {
 function setHudItemColor(id, color) {
   const el = document.getElementById(id)
   if (!el) return
-  el.style.background   = hexWithAlpha(color, 0.30)
-  el.style.borderColor  = color
+  el.style.background  = hexWithAlpha(color, 0.30)
+  el.style.borderColor = color
+}
+
+function clearHudItemColor(id) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.style.background  = ''
+  el.style.borderColor = ''
+}
+
+function cadenceColor(rpm) {
+  if (rpm < 80)  return '#4488ff'
+  if (rpm < 90)  return '#44cc44'
+  if (rpm < 100) return '#ff8800'
+  return '#ff3333'
 }
 
 function hexWithAlpha(hex, alpha) {
