@@ -95,7 +95,7 @@ function segFtpForColor(seg) {
 
 // ── Main exported init ────────────────────────────────────────────────────────
 
-export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsParams, onWorkoutEnd }) {
+export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, isDummyTrainer = () => false, getPhysicsParams, onWorkoutEnd }) {
   const loadBtn    = document.getElementById('load-zwo-btn')
   const fileInput  = document.getElementById('zwo-file-input')
   const zwoListEl  = document.getElementById('zwo-list')
@@ -139,14 +139,14 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
       segments,
       ftpW: pseudoFtpW,
       getLiveData,
-      ftmsClient,
+      ftmsClient: isDummyTrainer() ? null : ftmsClient,
       params,
       onStateUpdate: (state) => updateRunUI(state, segments),
       onFinished:    (summary) => {
         controller = null
         clearSession()
         setRunningState(false)
-        if (summary) onWorkoutEnd({ ...summary, workoutName: selectedWorkout?.record?.name ?? '' })
+        if (summary && !isDummyTrainer()) onWorkoutEnd({ ...summary, workoutName: selectedWorkout?.record?.name ?? '' })
       },
       onAutoPause: () => { pauseBtn.textContent = '自動一時停止中 ▶ 再開' },
       onAutoResume: () => { isPaused = false; pauseBtn.textContent = '⏸ 一時停止' },
@@ -209,7 +209,7 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, getPhysicsPar
     controller = null
     clearSession()
     setRunningState(false)
-    if (summary) onWorkoutEnd(summary)
+    if (summary && !isDummyTrainer()) onWorkoutEnd(summary)
   })
 
   document.getElementById('wo-ftp-up').addEventListener('click', () => {

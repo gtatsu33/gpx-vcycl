@@ -209,20 +209,9 @@ export class WorkoutController {
   }
 
   #tick() {
-    const now = Date.now()
-    const dtMs = now - this.#tickAt
+    const now   = Date.now()
+    const dtSec = Math.min((now - this.#tickAt) / 1000, 0.5)  // cap at 0.5s against long pauses
     this.#tickAt = now
-
-    const effectivePaused = this.#paused || this.#autoPaused
-    if (!effectivePaused) {
-      this.#elapsedMs  += dtMs
-      const dtSec       = dtMs / 1000
-      this.#velocityMs  = stepVelocity(this.#powerAvg.average, 0, this.#velocityMs, dtSec, this.#params)
-      this.#distanceM  += this.#velocityMs * dtSec
-    }
-
-    const elapsedS = this.#elapsedMs / 1000
-    const totalS   = this.totalDurationS
 
     const { powerW: rawPowerW, cadenceRpm, heartRateBpm } = this.#getLiveData()
     this.#powerAvg.push(rawPowerW, now)
@@ -230,6 +219,16 @@ export class WorkoutController {
 
     const smoothPowerW  = this.#powerAvg.average
     const smoothCadence = this.#cadenceAvg.average
+
+    const effectivePaused = this.#paused || this.#autoPaused
+    if (!effectivePaused) {
+      this.#elapsedMs  += dtSec * 1000
+      this.#velocityMs  = stepVelocity(smoothPowerW, 0, this.#velocityMs, dtSec, this.#params)
+      this.#distanceM  += this.#velocityMs * dtSec
+    }
+
+    const elapsedS = this.#elapsedMs / 1000
+    const totalS   = this.totalDurationS
 
     // パワーカウンタ更新（生値で判定）
     this.#updatePowerCounters(rawPowerW)

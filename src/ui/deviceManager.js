@@ -7,9 +7,10 @@ import { MockHrsClient }  from '../ble/hrs.mock.js'
 import { getDb }          from '../storage/db.js'
 
 /**
- * @returns {Promise<{ getLiveData: () => { powerW: number, cadenceRpm: number, heartRateBpm: number } }>}
+ * @param {{ getFtpW?: () => number }} options
+ * @returns {Promise<{ getLiveData: () => { powerW: number, cadenceRpm: number, heartRateBpm: number }, ftmsClient: object, isDummyTrainer: () => boolean }>}
  */
-export async function initDeviceManager() {
+export async function initDeviceManager({ getFtpW = () => 170 } = {}) {
   const isMock = new URLSearchParams(location.search).has('mock')
 
   const ftms = isMock ? new MockFtmsClient() : new FtmsClient()
@@ -27,12 +28,25 @@ export async function initDeviceManager() {
   // Live data read by RideController
   const live = { powerW: 0, cadenceRpm: 0, heartRateBpm: 0 }
 
+  // Dummy trainer state
+  let dummyEnabled = false
+  const dummyCheckbox = document.getElementById('dummy-trainer-checkbox')
+  dummyCheckbox.addEventListener('change', (e) => {
+    dummyEnabled = e.target.checked
+    activeSrcEl.textContent = dummyEnabled ? 'Dummy' : (powerSource === 'trainer' ? 'Trainer' : 'Power Meter')
+  })
+
   function appendLog(msg) {
     const time = new Date().toLocaleTimeString('ja-JP')
     logEl.textContent = `[${time}] ${msg}\n` + logEl.textContent
   }
 
   function updateActivePower() {
+    if (dummyEnabled) {
+      activePowerEl.textContent = Math.round(getFtpW()).toString()
+      activeSrcEl.textContent   = 'Dummy'
+      return
+    }
     const key = powerSource === 'trainer' ? 'trainer' : 'powerMeter'
     const w = latestPowerW[key]
     activePowerEl.textContent = w != null ? Math.round(w).toString() : '--'
@@ -148,7 +162,13 @@ export async function initDeviceManager() {
   }
   updateActivePower()
 
-  return { getLiveData: () => ({ ...live }), ftmsClient: ftms }
+  return {
+    getLiveData: () => dummyEnabled
+      ? { powerW: getFtpW(), cadenceRpm: 90, heartRateBpm: live.heartRateBpm }
+      : { ...live },
+    ftmsClient:     ftms,
+    isDummyTrainer: () => dummyEnabled,
+  }
 }
 
 function setText(id, value) {

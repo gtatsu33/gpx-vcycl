@@ -186,7 +186,9 @@ export class RideController {
 
     this.#simulator.tick(smoothPowerW, dtSec)
 
-    const state = this.#simulator.getState()
+    const state          = this.#simulator.getState()
+    const altFactor      = state.altitudeFactor ?? 1
+    const effectivePowerW = smoothPowerW * altFactor
     this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg, state.currentGradientPercent)
     this.#mapView.setProgress(state.distanceM)
     this.#eleView?.update(state.distanceM)
@@ -196,7 +198,8 @@ export class RideController {
       totalDistanceM:  this.#route.totalDistanceM,
       elapsedSec:      state.elapsedSec,
       elevationGainM:  state.elevationGainM,
-      powerW:          smoothPowerW,
+      powerW:          effectivePowerW,
+      altitudeFactor:  altFactor,
       cadenceRpm:      smoothCadence,
       torqueNm,
       heartRateBpm,
@@ -213,7 +216,7 @@ export class RideController {
         distanceM:      state.distanceM,
         velocityMs:     state.velocityMs,
         gradientPercent: state.currentGradientPercent,
-        powerW:          smoothPowerW,
+        powerW:          effectivePowerW,
         cadenceRpm:      smoothCadence,
         heartRateBpm,
       })

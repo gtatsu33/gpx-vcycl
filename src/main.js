@@ -179,6 +179,7 @@ let selectedRouteId = null
 let selectedRouteName = ''
 let getLiveData     = null
 let ftmsClient      = null
+let isDummyTrainer  = () => false
 let hudView         = null
 let rideEndModal    = null
 let isPaused        = false
@@ -230,10 +231,12 @@ function showStravaWarningDialog() {
 startBtn.addEventListener('click', async () => {
   if (!selectedRoute || !getLiveData) return
 
-  const stravaInfo = await getConnectionInfo()
-  if (!stravaInfo) {
-    const ok = await showStravaWarningDialog()
-    if (!ok) return
+  if (!isDummyTrainer()) {
+    const stravaInfo = await getConnectionInfo()
+    if (!stravaInfo) {
+      const ok = await showStravaWarningDialog()
+      if (!ok) return
+    }
   }
 
   const params                 = await loadPhysicsParams()
@@ -260,7 +263,7 @@ startBtn.addEventListener('click', async () => {
       rideController = null
       clearRouteSession()
       setRidingState(false)
-      if (summary) rideEndModal.show(summary)
+      if (summary && !isDummyTrainer()) rideEndModal.show(summary)
     },
   })
   rideController.start()
@@ -286,7 +289,7 @@ stopBtn.addEventListener('click', () => {
   rideController = null
   clearRouteSession()
   setRidingState(false)
-  if (summary) rideEndModal.show(summary)
+  if (summary && !isDummyTrainer()) rideEndModal.show(summary)
 })
 
 function setRidingState(riding) {
@@ -335,9 +338,10 @@ async function init() {
     history.replaceState({}, '', window.location.pathname)
   }
 
-  const result = await initDeviceManager()
-  getLiveData  = result.getLiveData
-  ftmsClient   = result.ftmsClient
+  const result    = await initDeviceManager({ getFtpW })
+  getLiveData     = result.getLiveData
+  ftmsClient      = result.ftmsClient
+  isDummyTrainer  = result.isDummyTrainer
 
   const mapProvider = (await getDb().get('settings', 'mapProvider')) ?? 'osm'
   const isOsmMode   = !(mapProvider === 'google' && isOwnerMode())
@@ -370,6 +374,7 @@ async function init() {
     getLiveData,
     ftmsClient,
     getFtpW,
+    isDummyTrainer,
     getPhysicsParams: loadPhysicsParams,
     onWorkoutEnd: (summary) => showWorkoutEndModal(summary),
   })
@@ -404,7 +409,7 @@ async function init() {
             rideController = null
             clearRouteSession()
             setRidingState(false)
-            if (summary) rideEndModal.show(summary)
+            if (summary && !isDummyTrainer()) rideEndModal.show(summary)
           },
         })
         rideController.restoreFrom(routeSession)

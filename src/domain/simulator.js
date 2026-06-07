@@ -13,7 +13,7 @@ export class RideSimulator {
   constructor(route, params) {
     this.#route  = route
     this.#params = params
-    this.#s      = { distanceM: 0, velocityMs: 0, elapsedSec: 0, elevationGainM: 0 }
+    this.#s      = { distanceM: 0, velocityMs: 0, elapsedSec: 0, elevationGainM: 0, altitudeFactor: 1 }
   }
 
   /**
@@ -28,8 +28,10 @@ export class RideSimulator {
 
     const gradient    = this.#route.getGradientAt(s.distanceM)
     const elevM       = this.#route.getElevationAt(s.distanceM) ?? 0
-    const effectivePowerW = this.#altitudeEffectEnabled ? powerW * altitudeFactor(elevM) : powerW
+    const factor      = this.#altitudeEffectEnabled ? altitudeFactor(elevM) : 1
+    const effectivePowerW = powerW * factor
     const newV        = stepVelocity(effectivePowerW, gradient, s.velocityMs, dtSec, this.#params)
+    s.altitudeFactor  = factor
     const prevDist   = s.distanceM
 
     s.distanceM  = Math.min(prevDist + newV * dtSec, this.#route.totalDistanceM)
@@ -60,6 +62,7 @@ export class RideSimulator {
       velocityMs:             s.velocityMs,
       elapsedSec:             s.elapsedSec,
       elevationGainM:         s.elevationGainM,
+      altitudeFactor:         s.altitudeFactor ?? 1,
       currentLat:             pos.lat,
       currentLon:             pos.lon,
       currentGradientPercent: this.#route.getGradientAt(s.distanceM),

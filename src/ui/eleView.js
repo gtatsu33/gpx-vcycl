@@ -7,15 +7,12 @@ const CAM_HEIGHT   = Y_EXAG * 1.8  // 1.8m real above road (world-space scaled)
 const LOOK_AHEAD   = 5     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
 const FADE_DIST    = 280    // m — fade to black over this distance
-const FADE_MIN     = 0.0    // fade to black; fog blends to sky beyond
 const FOG_NEAR     = 20     // m — fog starts here
 const FOG_FAR      = 220    // m — fog fully opaque here
 const LOOK_Y_OFFSET = 0.75 // lookAt Y = eyeY + this; aligns road vanishing point with CSS horizon (~61.5% from top)
-// [夜間] const SKY_HORIZON  = 0x1a3a5c
-// [夜間] const SKY_CSS      = 'linear-gradient(to bottom,#0a1628 0%,#1a3a5c 60%,#142030 100%)'
-// [昼間]
-const SKY_HORIZON  = 0x4a7ab5
-const SKY_CSS      = 'linear-gradient(to bottom,#1a3a6c 0%,#4a7ab5 58%,#1a0e05 65%,#7a5020 100%)'
+const SKY_HORIZON   = 0x4a7ab5
+const SKY_CSS       = 'linear-gradient(to bottom,#1a3a6c 0%,#4a7ab5 58%,#1a0e05 65%,#7a5020 100%)'
+const WALL_BOTTOM_Y = -10 * Y_EXAG  // absolute world Y = real −10 m elevation
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
 const DARK         = 0.65
@@ -42,6 +39,7 @@ export class EleView {
   #scene
   #camera
   #mesh          = null
+  #wallMesh      = null
   #dashMesh      = null
   #dashNear      = null
   #dashFar       = null
@@ -70,9 +68,9 @@ export class EleView {
     this.#renderer.setClearColor(0x000000, 0)  // transparent — CSS sky shows through
 
     this.#scene = new THREE.Scene()
-    this.#scene.fog = new THREE.Fog(SKY_HORIZON, FOG_NEAR, FOG_FAR)
+    // fog disabled — walls would blend into sky color
 
-    this.#camera = new THREE.PerspectiveCamera(65, 1, 0.5, 800)
+    this.#camera = new THREE.PerspectiveCamera(50, 1, 0.5, 800)
 
     new ResizeObserver(() => this.#syncSize()).observe(containerEl)
     this.#syncSize()
@@ -86,6 +84,11 @@ export class EleView {
       this.#mesh.geometry.dispose()
       this.#mesh = null
     }
+    if (this.#wallMesh) {
+      this.#scene.remove(this.#wallMesh)
+      this.#wallMesh.geometry.dispose()
+      this.#wallMesh = null
+    }
     if (this.#dashMesh) {
       this.#scene.remove(this.#dashMesh)
       this.#dashMesh.geometry.dispose()
@@ -96,9 +99,11 @@ export class EleView {
       this.#edgeMesh.geometry.dispose()
       this.#edgeMesh = null
     }
-    this.#pts3D = buildPts3D(route.points)
-    this.#mesh  = buildRibbonMesh(this.#pts3D)
+    this.#pts3D   = buildPts3D(route.points)
+    this.#mesh    = buildRibbonMesh(this.#pts3D)
     this.#scene.add(this.#mesh)
+    this.#wallMesh = buildWallMesh(this.#pts3D)
+    this.#scene.add(this.#wallMesh)
     const { mesh: dm, nearM: dNear, farM: dFar } = buildDashMesh(this.#pts3D)
     this.#dashMesh = dm
     this.#dashNear = dNear
@@ -177,7 +182,11 @@ export class EleView {
 
     fadeLineMesh(this.#dashMesh, this.#dashNear, this.#dashFar, camDistM)
     fadeLineMesh(this.#edgeMesh, this.#edgeNear, this.#edgeFar, camDistM)
+    this.#updateWallColors()
   }
+
+  // Colors are baked into buildWallMesh; re-enable this method when depth fade is needed.
+  #updateWallColors() {}
 
   #buildSigns() {
     for (const s of this.#signs) {
@@ -380,6 +389,49 @@ function interpPt(pts3D, distM) {
   const a = pts3D[lo], b = pts3D[hi]
   const t = (distM - a.distM) / (b.distM - a.distM)
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }
+}
+
+function buildWallMesh(pts3D) {
+  const n    = pts3D.length
+  const segs = n - 1
+  const pos = new Float32Array(segs * 2 * 4 * 3)
+  const col = new Float32Array(segs * 2 * 4 * 3)
+  const idx = new Uint32Array(segs * 2 * 6)
+  let vi = 0, ki = 0
+
+  for (let side = 0; side < 2; side++) {
+    const sign = side === 0 ? -1 : 1
+    for (let i = 0; i < segs; i++) {
+      const pt   = pts3D[i]
+      const next = pts3D[i + 1]
+      const tx   = next.x - pt.x, tz = next.z - pt.z
+      const hLen = Math.sqrt(tx * tx + tz * tz) || 1
+      const rx   = tz / hLen, rz = -tx / hLen
+      const ox   = rx * sign * ROAD_HALF_W
+      const oz   = rz * sign * ROAD_HALF_W
+
+      const rc = roadColor(pt.grad)
+      const setV = (v, x, y, z, f) => {
+        const pb = (vi + v) * 3
+        pos[pb] = x; pos[pb + 1] = y; pos[pb + 2] = z
+        col[pb] = rc.r * f; col[pb + 1] = rc.g * f; col[pb + 2] = rc.b * f
+      }
+      setV(0, pt.x   + ox, pt.y,          pt.z   + oz, 1)  // top-near
+      setV(1, next.x + ox, next.y,        next.z + oz, 1)  // top-far
+      setV(2, next.x + ox, WALL_BOTTOM_Y, next.z + oz, 0)  // bottom-far  (black)
+      setV(3, pt.x   + ox, WALL_BOTTOM_Y, pt.z   + oz, 0)  // bottom-near (black)
+
+      idx[ki++] = vi; idx[ki++] = vi + 1; idx[ki++] = vi + 2
+      idx[ki++] = vi; idx[ki++] = vi + 2; idx[ki++] = vi + 3
+      vi += 4
+    }
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+  geo.setIndex(new THREE.BufferAttribute(idx, 1))
+  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }))
 }
 
 function buildRibbonMesh(pts3D) {

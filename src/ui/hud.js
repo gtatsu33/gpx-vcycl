@@ -21,13 +21,22 @@ export class HUDView {
 
   update({
     velocityMs, distanceM, totalDistanceM, elapsedSec, elevationGainM,
-    powerW, cadenceRpm, torqueNm, heartRateBpm, gradientPercent,
+    powerW, altitudeFactor = 1, cadenceRpm, torqueNm, heartRateBpm, gradientPercent,
   }) {
     set('hud-speed',    (velocityMs * 3.6).toFixed(1))
     set('hud-distance', (distanceM  / 1000).toFixed(2))
     set('hud-time',     fmtTime(elapsedSec))
     set('hud-elev',     Math.round(elevationGainM).toString())
     set('hud-power',    Math.round(powerW).toString())
+    const penaltyEl = document.getElementById('hud-power-penalty')
+    if (penaltyEl) {
+      if (altitudeFactor < 1.0) {
+        penaltyEl.textContent = `(-${Math.round((1 - altitudeFactor) * 100)}%)`
+        penaltyEl.hidden = false
+      } else {
+        penaltyEl.hidden = true
+      }
+    }
     set('hud-cadence',  Math.round(cadenceRpm).toString())
     set('hud-torque',   torqueNm != null ? torqueNm.toFixed(1) : '--.-')
     set('hud-hr',       heartRateBpm > 0 ? heartRateBpm.toString() : '--')
