@@ -204,6 +204,7 @@ export class RideController {
       torqueNm,
       heartRateBpm,
       gradientPercent: state.currentGradientPercent,
+      altitudeM:       this.#route.getElevationAt(state.distanceM),
     })
 
     // 1Hz サンプリング
