@@ -1,17 +1,19 @@
 import * as THREE from 'three'
 
-const ROAD_HALF_W  = 4.0
+const ROAD_HALF_W  = 8.0
 const SHOULDER_W   = 2.0
 const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
-const CAM_HEIGHT   = Y_EXAG * 1.8  // 1.8m real above road (world-space scaled)
+const CAM_HEIGHT   = Y_EXAG * 3.0  // 3.0m real above road (world-space scaled)
 const LOOK_AHEAD   = 5     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
-const FADE_DIST    = 280    // m — fade to black over this distance
-const FOG_NEAR     = 20     // m — fog starts here
-const FOG_FAR      = 220    // m — fog fully opaque here
-const LOOK_Y_OFFSET = 0.75 // lookAt Y = eyeY + this; aligns road vanishing point with CSS horizon (~61.5% from top)
-const SKY_HORIZON   = 0x4a7ab5
-const SKY_CSS       = 'linear-gradient(to bottom,#1a3a6c 0%,#4a7ab5 58%,#1a0e05 65%,#7a5020 100%)'
+const FADE_DIST    = 280    // m — sign visibility cutoff
+const AHEAD_M      = 800    // m — hard draw cap ahead of rider (safety net vs. spatial overlap)
+const BEHIND_M     = 30     // m — also draw a little behind (camera sits above the road)
+const FOG_NEAR     = 200    // m — distance fog starts
+const FOG_FAR      = 800    // m — road fully blended into horizon here
+const FOG_COLOR    = 0xcccccc  // 80% grey — objects fade to this at max distance, never going dark
+const LOOK_Y_OFFSET = 0    // lookAt Y = eyeY + this; 0 = horizontal gaze, walls converge correctly
+const SKY_CSS       = '#cccccc'
 const WALL_BOTTOM_Y = -10 * Y_EXAG  // absolute world Y = real −10 m elevation
 const EARTH_R      = 6_371_000
 const DEG2RAD      = Math.PI / 180
@@ -20,7 +22,7 @@ const SIGN_INTERVAL_M = 1000  // 1km ごとに看板
 
 const ROAD_EASY    = new THREE.Color('#2ed573').multiplyScalar(DARK)  // < 3%
 const ROAD_MOD     = new THREE.Color('#ffd32a').multiplyScalar(DARK)  // 3–6%
-const ROAD_HARD    = new THREE.Color('#ff6348').multiplyScalar(DARK)  // 6–9%
+const ROAD_HARD    = new THREE.Color('#ee7800').multiplyScalar(DARK)  // 6–9%
 const ROAD_STEEP   = new THREE.Color('#ff0000').multiplyScalar(DARK)  // 9–12%
 const ROAD_EXTREME = new THREE.Color('#4C2E30').multiplyScalar(DARK)  // ≥ 12%
 const SHOULDER_COL = new THREE.Color(0x282828)
@@ -41,11 +43,8 @@ export class EleView {
   #mesh          = null
   #wallMesh      = null
   #dashMesh      = null
-  #dashNear      = null
-  #dashFar       = null
   #edgeMesh      = null
-  #edgeNear      = null
-  #edgeFar       = null
+  #ranged        = null   // [{ geo, distM, stride }] — per-frame setDrawRange window
   #pts3D         = null
   #route         = null
   #targetDistM   = 0
@@ -68,7 +67,9 @@ export class EleView {
     this.#renderer.setClearColor(0x000000, 0)  // transparent — CSS sky shows through
 
     this.#scene = new THREE.Scene()
-    // fog disabled — walls would blend into sky color
+    // Distance dimming via real 3D camera-space fog — NOT along-route distM.
+    // Switchbacks/折り返し are far in distM but spatially near; fog keeps them correct.
+    this.#scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR)
 
     this.#camera = new THREE.PerspectiveCamera(50, 1, 0.5, 800)
 
@@ -100,23 +101,31 @@ export class EleView {
       this.#edgeMesh = null
     }
     this.#pts3D   = buildPts3D(route.points)
-    this.#mesh    = buildRibbonMesh(this.#pts3D)
+    const { mesh: rm, segDistM: rDistM } = buildRibbonMesh(this.#pts3D)
+    this.#mesh = rm
     this.#scene.add(this.#mesh)
-    this.#wallMesh = buildWallMesh(this.#pts3D)
+    const { mesh: wm, segDistM: wDistM, stride: wStride } = buildWallMesh(this.#pts3D)
+    this.#wallMesh = wm
     this.#scene.add(this.#wallMesh)
-    const { mesh: dm, nearM: dNear, farM: dFar } = buildDashMesh(this.#pts3D)
+    const { mesh: dm, nearM: dNear } = buildDashMesh(this.#pts3D)
     this.#dashMesh = dm
-    this.#dashNear = dNear
-    this.#dashFar  = dFar
     this.#scene.add(this.#dashMesh)
-    const { mesh: em, nearM: eNear, farM: eFar } = buildEdgeMesh(this.#pts3D)
+    const { mesh: em, segDistM: eDistM, stride: eStride } = buildEdgeMesh(this.#pts3D)
     this.#edgeMesh = em
-    this.#edgeNear = eNear
-    this.#edgeFar  = eFar
     this.#scene.add(this.#edgeMesh)
+
+    // Each entry: distM[] is ascending; index buffer is grouped so group g occupies
+    // [g*stride, (g+1)*stride). A distM window → one contiguous setDrawRange.
+    this.#ranged = [
+      { geo: this.#mesh.geometry,     distM: rDistM, stride: 6 },
+      { geo: this.#wallMesh.geometry, distM: wDistM, stride: wStride },
+      { geo: this.#dashMesh.geometry, distM: dNear,  stride: 6 },
+      { geo: this.#edgeMesh.geometry, distM: eDistM, stride: eStride },
+    ]
+
     this.#currentDistM = this.#targetDistM
     this.#updateCameraAt(this.#currentDistM)
-    this.#updateVertexColors()
+    this.#updateDrawRange(this.#currentDistM)
     this.#buildSigns()
     this.#buildWptSigns()
   }
@@ -139,6 +148,21 @@ export class EleView {
     this.#camera.updateProjectionMatrix()
   }
 
+  // Hard-cap rendering to the route window [cam - BEHIND_M, cam + AHEAD_M] so that
+  // sections far along the route but spatially near (switchbacks/折り返し) are not drawn.
+  // Each geometry's index buffer is distM-ascending, so the window is one draw range.
+  // The cut at AHEAD_M sits well beyond FOG_FAR, so it is hidden by fog.
+  #updateDrawRange(cam) {
+    if (!this.#ranged) return
+    const loM = Math.max(0, cam - BEHIND_M)
+    const hiM = cam + AHEAD_M
+    for (const r of this.#ranged) {
+      const s = Math.max(0, lowerBound(r.distM, loM) - 1)  // -1 includes the segment under the camera
+      const e = lowerBound(r.distM, hiM)
+      r.geo.setDrawRange(s * r.stride, Math.max(0, e - s) * r.stride)
+    }
+  }
+
   #updateCameraAt(distM) {
     if (!this.#pts3D) return
     const cam  = interpPt(this.#pts3D, distM)
@@ -149,44 +173,6 @@ export class EleView {
     // Horizontal (x/z) tracks the route for turn responsiveness.
     this.#camera.lookAt(look.x, eyeY + LOOK_Y_OFFSET, look.z)
   }
-
-  // Bake distance-based brightness fade into vertex colors for the visible window.
-  #updateVertexColors() {
-    if (!this.#mesh || !this.#pts3D) return
-    const colAttr  = this.#mesh.geometry.attributes.color
-    const pts      = this.#pts3D
-    const camDistM = this.#currentDistM
-    const V        = 4
-
-    let lo = 0, hi = pts.length - 1
-    const minDist = camDistM - 50
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (pts[mid].distM < minDist) lo = mid + 1; else hi = mid
-    }
-    for (let i = lo; i < pts.length; i++) {
-      const pt    = pts[i]
-      const ahead = pt.distM - camDistM
-      if (ahead > FADE_DIST + 50) break
-      const fade = depthFade(ahead)
-      const rCol = roadColor(pt.grad)
-      for (let v = 0; v < V; v++) {
-        const b   = (i * V + v) * 3
-        const col = (v === 0 || v === 3) ? SHOULDER_COL : rCol
-        colAttr.array[b]     = col.r * fade
-        colAttr.array[b + 1] = col.g * fade
-        colAttr.array[b + 2] = col.b * fade
-      }
-    }
-    colAttr.needsUpdate = true
-
-    fadeLineMesh(this.#dashMesh, this.#dashNear, this.#dashFar, camDistM)
-    fadeLineMesh(this.#edgeMesh, this.#edgeNear, this.#edgeFar, camDistM)
-    this.#updateWallColors()
-  }
-
-  // Colors are baked into buildWallMesh; re-enable this method when depth fade is needed.
-  #updateWallColors() {}
 
   #buildSigns() {
     for (const s of this.#signs) {
@@ -204,9 +190,9 @@ export class EleView {
       const distM = km * SIGN_INTERVAL_M
       const { sx, sy, sz } = signPos(this.#pts3D, distM, +1)
 
-      const postGeo  = new THREE.BoxGeometry(0.15, 2.5, 0.15)
+      const postGeo  = new THREE.BoxGeometry(0.30, 8.0, 0.30)
       const postMesh = new THREE.Mesh(postGeo, new THREE.MeshBasicMaterial({ color: 0x888888 }))
-      postMesh.position.set(sx, sy + 1.25, sz)
+      postMesh.position.set(sx, sy + 1.0, sz)  // top at sy+5, bottom at sy-3 (into wall)
       this.#scene.add(postMesh)
 
       const panel = makeSignSprite(
@@ -215,7 +201,7 @@ export class EleView {
         'rgba(20,30,40,0.92)', 'rgba(140,180,220,0.7)',
         '#e8f0f8', 'rgba(160,195,220,0.85)',
       )
-      panel.position.set(sx, sy + 2.5 + panel.scale.y / 2, sz)
+      panel.position.set(sx, sy + 5.0 + panel.scale.y / 2, sz)
       this.#scene.add(panel)
 
       this.#signs.push({ distM, postMesh, panel })
@@ -224,10 +210,10 @@ export class EleView {
     // Goal sign at the finish line
     const { sx: gx, sy: gy, sz: gz } = signPos(this.#pts3D, totalM, +1)
     const goalPost = new THREE.Mesh(
-      new THREE.BoxGeometry(0.15, 2.5, 0.15),
+      new THREE.BoxGeometry(0.30, 8.0, 0.30),
       new THREE.MeshBasicMaterial({ color: 0xffd700 }),
     )
-    goalPost.position.set(gx, gy + 1.25, gz)
+    goalPost.position.set(gx, gy + 1.0, gz)
     this.#scene.add(goalPost)
 
     const goalPanel = makeSignSprite(
@@ -235,7 +221,7 @@ export class EleView {
       'rgba(20,40,10,0.92)', 'rgba(220,180,0,0.85)',
       '#ffd700', null,
     )
-    goalPanel.position.set(gx, gy + 2.5 + goalPanel.scale.y / 2, gz)
+    goalPanel.position.set(gx, gy + 5.0 + goalPanel.scale.y / 2, gz)
     this.#scene.add(goalPanel)
     this.#signs.push({ distM: totalM, postMesh: goalPost, panel: goalPanel })
   }
@@ -263,9 +249,9 @@ export class EleView {
     for (const wp of this.#route.waypoints) {
       const { sx, sy, sz } = signPos(this.#pts3D, wp.distanceM, -1)
 
-      const postGeo  = new THREE.BoxGeometry(0.15, 2.5, 0.15)
+      const postGeo  = new THREE.BoxGeometry(0.30, 8.0, 0.30)
       const postMesh = new THREE.Mesh(postGeo, new THREE.MeshBasicMaterial({ color: 0x888888 }))
-      postMesh.position.set(sx, sy + 1.25, sz)
+      postMesh.position.set(sx, sy + 1.0, sz)
       this.#scene.add(postMesh)
 
       const panel = makeSignSprite(
@@ -273,7 +259,7 @@ export class EleView {
         'rgba(15,35,20,0.92)', 'rgba(100,200,140,0.6)',
         '#b8f0cc', null,
       )
-      panel.position.set(sx, sy + 2.5 + panel.scale.y / 2, sz)
+      panel.position.set(sx, sy + 5.0 + panel.scale.y / 2, sz)
       this.#scene.add(panel)
 
       this.#wptSigns.push({ distM: wp.distanceM, postMesh, panel })
@@ -289,7 +275,7 @@ export class EleView {
         if (Math.abs(delta) > 0.05) {
           this.#currentDistM += delta * LERP_FACTOR
           this.#updateCameraAt(this.#currentDistM)
-          this.#updateVertexColors()
+          this.#updateDrawRange(this.#currentDistM)
         }
       }
       this.#renderer.render(this.#scene, this.#camera)
@@ -308,7 +294,7 @@ function signPos(pts3D, distM, side) {
   const tx = next.x - prev.x, tz = next.z - prev.z
   const len = Math.sqrt(tx * tx + tz * tz) || 1
   const rx =  tz / len, rz = -tx / len
-  const offset = ROAD_HALF_W + SHOULDER_W + 0.5
+  const offset = ROAD_HALF_W + 0.5
   return { sx: pt.x + rx * offset * side, sy: pt.y, sz: pt.z + rz * offset * side }
 }
 
@@ -327,40 +313,40 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 function makeSignSprite(topText, bottomText, bgColor, borderColor, topColor, bottomColor) {
-  const CW = 256
-  const CH = bottomText ? 120 : 80
+  const CW = 512
+  const CH = bottomText ? 240 : 160
   const canvas = document.createElement('canvas')
   canvas.width = CW; canvas.height = CH
   const ctx = canvas.getContext('2d')
 
   ctx.fillStyle = bgColor
-  roundRect(ctx, 0, 0, CW, CH, 10)
+  roundRect(ctx, 0, 0, CW, CH, 20)
   ctx.fill()
 
   ctx.strokeStyle = borderColor
-  ctx.lineWidth = 4
-  roundRect(ctx, 2, 2, CW - 4, CH - 4, 8)
+  ctx.lineWidth = 8
+  roundRect(ctx, 4, 4, CW - 8, CH - 8, 16)
   ctx.stroke()
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   if (bottomText) {
     ctx.fillStyle = topColor
-    ctx.font = 'bold 50px system-ui, sans-serif'
-    ctx.fillText(topText, CW / 2, 50)
+    ctx.font = 'bold 100px system-ui, sans-serif'
+    ctx.fillText(topText, CW / 2, 100)
     ctx.fillStyle = bottomColor
-    ctx.font = '34px system-ui, sans-serif'
-    ctx.fillText(bottomText, CW / 2, 96)
+    ctx.font = '68px system-ui, sans-serif'
+    ctx.fillText(bottomText, CW / 2, 192)
   } else {
     ctx.fillStyle = topColor
-    ctx.font = 'bold 44px system-ui, sans-serif'
+    ctx.font = 'bold 88px system-ui, sans-serif'
     ctx.fillText(topText, CW / 2, CH / 2)
   }
 
   const tex = new THREE.CanvasTexture(canvas)
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true })
   const sprite = new THREE.Sprite(mat)
-  const worldW = 3.0
+  const worldW = 6.0
   sprite.scale.set(worldW, worldW * CH / CW, 1)
   return sprite
 }
@@ -391,35 +377,52 @@ function interpPt(pts3D, distM) {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }
 }
 
+// Precompute smoothed per-point perpendiculars using averaged adjacent-segment tangents.
+// Adjacent segments share the same perp at their common point → no gaps at curves.
+function smoothedPerps(pts3D) {
+  const n = pts3D.length
+  return pts3D.map((_, i) => {
+    const prev = pts3D[Math.max(0, i - 1)]
+    const next = pts3D[Math.min(n - 1, i + 1)]
+    const tx = next.x - prev.x, tz = next.z - prev.z
+    const len = Math.sqrt(tx * tx + tz * tz) || 1
+    return { rx: tz / len, rz: -tx / len }
+  })
+}
+
 function buildWallMesh(pts3D) {
   const n    = pts3D.length
   const segs = n - 1
-  const pos = new Float32Array(segs * 2 * 4 * 3)
-  const col = new Float32Array(segs * 2 * 4 * 3)
-  const idx = new Uint32Array(segs * 2 * 6)
+  const pos      = new Float32Array(segs * 2 * 4 * 3)
+  const col      = new Float32Array(segs * 2 * 4 * 3)
+  const idx      = new Uint32Array(segs * 2 * 6)
+  const segDistM = new Float32Array(segs)  // ascending; both walls of a segment share one entry
   let vi = 0, ki = 0
+  const perps = smoothedPerps(pts3D)
 
-  for (let side = 0; side < 2; side++) {
-    const sign = side === 0 ? -1 : 1
-    for (let i = 0; i < segs; i++) {
-      const pt   = pts3D[i]
-      const next = pts3D[i + 1]
-      const tx   = next.x - pt.x, tz = next.z - pt.z
-      const hLen = Math.sqrt(tx * tx + tz * tz) || 1
-      const rx   = tz / hLen, rz = -tx / hLen
-      const ox   = rx * sign * ROAD_HALF_W
-      const oz   = rz * sign * ROAD_HALF_W
+  for (let i = 0; i < segs; i++) {
+    const pt   = pts3D[i]
+    const next = pts3D[i + 1]
+    const { rx: rx0, rz: rz0 } = perps[i]
+    const { rx: rx1, rz: rz1 } = perps[i + 1]
+    segDistM[i] = pt.distM
 
-      const rc = roadColor(pt.grad)
+    // Top = full road color; bottom = black (vertical gradient).
+    const rc = roadColor(pt.grad)
+    // Emit both walls of this segment together → index buffer stays distM-ascending.
+    for (let side = 0; side < 2; side++) {
+      const sign = side === 0 ? -1 : 1
+      const ox0  = rx0 * sign * ROAD_HALF_W, oz0 = rz0 * sign * ROAD_HALF_W
+      const ox1  = rx1 * sign * ROAD_HALF_W, oz1 = rz1 * sign * ROAD_HALF_W
       const setV = (v, x, y, z, f) => {
         const pb = (vi + v) * 3
         pos[pb] = x; pos[pb + 1] = y; pos[pb + 2] = z
         col[pb] = rc.r * f; col[pb + 1] = rc.g * f; col[pb + 2] = rc.b * f
       }
-      setV(0, pt.x   + ox, pt.y,          pt.z   + oz, 1)  // top-near
-      setV(1, next.x + ox, next.y,        next.z + oz, 1)  // top-far
-      setV(2, next.x + ox, WALL_BOTTOM_Y, next.z + oz, 0)  // bottom-far  (black)
-      setV(3, pt.x   + ox, WALL_BOTTOM_Y, pt.z   + oz, 0)  // bottom-near (black)
+      setV(0, pt.x   + ox0, pt.y,          pt.z   + oz0, 1)  // top-near
+      setV(1, next.x + ox1, next.y,        next.z + oz1, 1)  // top-far
+      setV(2, next.x + ox1, WALL_BOTTOM_Y, next.z + oz1, 0)  // bottom-far  (black)
+      setV(3, pt.x   + ox0, WALL_BOTTOM_Y, pt.z   + oz0, 0)  // bottom-near (black)
 
       idx[ki++] = vi; idx[ki++] = vi + 1; idx[ki++] = vi + 2
       idx[ki++] = vi; idx[ki++] = vi + 2; idx[ki++] = vi + 3
@@ -431,63 +434,55 @@ function buildWallMesh(pts3D) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
   geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
   geo.setIndex(new THREE.BufferAttribute(idx, 1))
-  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }))
+  return {
+    mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
+    segDistM,
+    stride: 12,  // 2 walls × 6 indices per segment
+  }
 }
 
 function buildRibbonMesh(pts3D) {
-  const n  = pts3D.length
-  const V  = 4   // outer-L, road-L, road-R, outer-R
-  const positions = new Float32Array(n * V * 3)
-  const colors    = new Float32Array(n * V * 3)   // all black initially
+  const n    = pts3D.length
+  const segs = n - 1
+  const pos      = new Float32Array(segs * 4 * 3)
+  const colors   = new Float32Array(segs * 4 * 3)
+  const indices  = new Uint32Array(segs * 6)
+  const segDistM = new Float32Array(segs)
+  const perps    = smoothedPerps(pts3D)
+  let vi = 0, ki = 0
 
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < segs; i++) {
     const pt   = pts3D[i]
-    const prev = pts3D[Math.max(0, i - 1)]
-    const next = pts3D[Math.min(n - 1, i + 1)]
+    const next = pts3D[i + 1]
+    const { rx: rx0, rz: rz0 } = perps[i]
+    const { rx: rx1, rz: rz1 } = perps[i + 1]
+    segDistM[i] = pt.distM
 
-    const tx = next.x - prev.x, tz = next.z - prev.z
-    const len = Math.sqrt(tx * tx + tz * tz) || 1
-    const rx =  tz / len
-    const rz = -tx / len
-
+    const c = roadColor(pt.grad)
     const w = ROAD_HALF_W
-    const s = ROAD_HALF_W + SHOULDER_W
-
-    const setPos = (v, ox, oz) => {
-      const b = (i * V + v) * 3
-      positions[b] = pt.x + ox; positions[b + 1] = pt.y; positions[b + 2] = pt.z + oz
+    const setV = (v, x, y, z) => {
+      const b = (vi + v) * 3
+      pos[b] = x; pos[b + 1] = y; pos[b + 2] = z
+      colors[b] = c.r; colors[b + 1] = c.g; colors[b + 2] = c.b
     }
-    setPos(0, -rx * s, -rz * s)
-    setPos(1, -rx * w, -rz * w)
-    setPos(2,  rx * w,  rz * w)
-    setPos(3,  rx * s,  rz * s)
-  }
+    setV(0, pt.x   - rx0 * w, pt.y,   pt.z   - rz0 * w)  // near-left
+    setV(1, pt.x   + rx0 * w, pt.y,   pt.z   + rz0 * w)  // near-right
+    setV(2, next.x + rx1 * w, next.y, next.z + rz1 * w)  // far-right
+    setV(3, next.x - rx1 * w, next.y, next.z - rz1 * w)  // far-left
 
-  const indices = new Uint32Array((n - 1) * 3 * 6)
-  let k = 0
-  for (let i = 0; i < n - 1; i++) {
-    const a = i * V, b = (i + 1) * V
-    for (let q = 0; q < 3; q++) {
-      indices[k++] = a+q;   indices[k++] = b+q;   indices[k++] = a+q+1
-      indices[k++] = a+q+1; indices[k++] = b+q;   indices[k++] = b+q+1
-    }
+    indices[ki++] = vi; indices[ki++] = vi + 1; indices[ki++] = vi + 2
+    indices[ki++] = vi; indices[ki++] = vi + 2; indices[ki++] = vi + 3
+    vi += 4
   }
 
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3))
   geo.setIndex(new THREE.BufferAttribute(indices, 1))
-
-  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    vertexColors: true,
-    side: THREE.DoubleSide,
-  }))
-}
-
-// Nonlinear depth fade: faster falloff near camera for perceptual clarity
-function depthFade(aheadM) {
-  const t = Math.max(0, Math.min(1, aheadM / FADE_DIST))
-  return Math.pow(1 - t, 1.5)
+  return {
+    mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
+    segDistM,
+  }
 }
 
 function buildLineMesh(pts3D, halfW, yOff, filterFn) {
@@ -514,7 +509,7 @@ function buildLineMesh(pts3D, halfW, yOff, filterFn) {
         x1 + rx*halfW, y1 + yOff, z1 + rz*halfW,
         x1 - rx*halfW, y1 + yOff, z1 - rz*halfW,
       )
-      for (let v = 0; v < 4; v++) colList.push(0, 0, 0)
+      for (let v = 0; v < 4; v++) colList.push(1, 1, 1)
       idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
       nearM.push(d0); farM.push(d1)
       vi += 4
@@ -548,67 +543,58 @@ function buildDashMesh(pts3D) {
 }
 
 function buildEdgeMesh(pts3D) {
-  const makeEdgeSide = (side) => {
-    const ox = side * ROAD_HALF_W   // lateral center offset
-    const posList = [], colList = [], idxList = [], nearM = [], farM = []
-    let vi = 0
-    for (let i = 0; i < pts3D.length - 1; i++) {
-      const pt   = pts3D[i]
-      const next = pts3D[i + 1]
-      const tx = next.x - pt.x, tz = next.z - pt.z
-      const hLen = Math.sqrt(tx * tx + tz * tz) || 1
-      const rx = tz / hLen, rz = -tx / hLen
-      const hw = 0.15
-      posList.push(
-        pt.x   + rx*(ox-hw), pt.y   + 0.05, pt.z   + rz*(ox-hw),
-        pt.x   + rx*(ox+hw), pt.y   + 0.05, pt.z   + rz*(ox+hw),
-        next.x + rx*(ox+hw), next.y + 0.05, next.z + rz*(ox+hw),
-        next.x + rx*(ox-hw), next.y + 0.05, next.z + rz*(ox-hw),
-      )
-      for (let v = 0; v < 4; v++) colList.push(1, 1, 1)
-      idxList.push(vi, vi+1, vi+2, vi, vi+2, vi+3)
-      nearM.push(pt.distM); farM.push(next.distM)
+  const segs = pts3D.length - 1
+  const pos      = new Float32Array(segs * 2 * 4 * 3)
+  const col      = new Float32Array(segs * 2 * 4 * 3)
+  const idx      = new Uint32Array(segs * 2 * 6)
+  const segDistM = new Float32Array(segs)  // ascending; both edges of a segment share one entry
+  const hw = 0.15
+  let vi = 0, ki = 0
+  const perps = smoothedPerps(pts3D)
+
+  for (let i = 0; i < segs; i++) {
+    const pt   = pts3D[i]
+    const next = pts3D[i + 1]
+    const { rx: rx0, rz: rz0 } = perps[i]
+    const { rx: rx1, rz: rz1 } = perps[i + 1]
+    segDistM[i] = pt.distM
+
+    // Emit both edge lines of this segment together → index buffer stays distM-ascending.
+    for (let side = 0; side < 2; side++) {
+      const ox = (side === 0 ? -1 : 1) * ROAD_HALF_W
+      const b3 = vi * 3
+      pos.set([
+        pt.x   + rx0*(ox-hw), pt.y   + 0.05, pt.z   + rz0*(ox-hw),
+        pt.x   + rx0*(ox+hw), pt.y   + 0.05, pt.z   + rz0*(ox+hw),
+        next.x + rx1*(ox+hw), next.y + 0.05, next.z + rz1*(ox+hw),
+        next.x + rx1*(ox-hw), next.y + 0.05, next.z + rz1*(ox-hw),
+      ], b3)
+      for (let v = 0; v < 4; v++) { const c = (vi + v) * 3; col[c] = 1; col[c + 1] = 1; col[c + 2] = 1 }
+      idx[ki++] = vi; idx[ki++] = vi + 1; idx[ki++] = vi + 2
+      idx[ki++] = vi; idx[ki++] = vi + 2; idx[ki++] = vi + 3
       vi += 4
     }
-    return { posList, colList, idxList, nearM, farM }
   }
 
-  const L = makeEdgeSide(-1), R = makeEdgeSide(+1)
-  const offset = L.posList.length / 3
-  const merged = {
-    pos:  new Float32Array([...L.posList, ...R.posList]),
-    col:  new Float32Array([...L.colList, ...R.colList]),
-    idx:  new Uint32Array([...L.idxList, ...R.idxList.map(i => i + offset)]),
-    nearM: [...L.nearM, ...R.nearM],
-    farM:  [...L.farM,  ...R.farM],
-  }
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(merged.pos, 3))
-  geo.setAttribute('color',    new THREE.BufferAttribute(merged.col, 3))
-  geo.setIndex(new THREE.BufferAttribute(merged.idx, 1))
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+  geo.setIndex(new THREE.BufferAttribute(idx, 1))
   return {
     mesh: new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })),
-    nearM: merged.nearM, farM: merged.farM,
+    segDistM,
+    stride: 12,  // 2 edges × 6 indices per segment
   }
 }
 
-function fadeLineMesh(mesh, nearM, farM, camDistM) {
-  if (!mesh || !nearM) return
-  const col = mesh.geometry.attributes.color
-  let lo = 0, hi = nearM.length - 1
+// (distance dimming now handled by THREE.Fog — see scene.fog)
+
+// First index i in ascending `arr` with arr[i] >= value (arr.length if none).
+function lowerBound(arr, value) {
+  let lo = 0, hi = arr.length
   while (lo < hi) {
     const mid = (lo + hi) >> 1
-    if (nearM[mid] < camDistM - 50) lo = mid + 1; else hi = mid
+    if (arr[mid] < value) lo = mid + 1; else hi = mid
   }
-  for (let i = lo; i < nearM.length; i++) {
-    if (nearM[i] - camDistM > FADE_DIST + 50) break
-    const fN = depthFade(nearM[i] - camDistM)
-    const fF = depthFade(farM[i]  - camDistM)
-    const b = i * 12
-    col.array[b]     = col.array[b+1]  = col.array[b+2]  = fN
-    col.array[b+3]   = col.array[b+4]  = col.array[b+5]  = fN
-    col.array[b+6]   = col.array[b+7]  = col.array[b+8]  = fF
-    col.array[b+9]   = col.array[b+10] = col.array[b+11] = fF
-  }
-  col.needsUpdate = true
+  return lo
 }

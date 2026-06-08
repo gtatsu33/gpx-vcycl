@@ -204,7 +204,7 @@ export class HUDView {
 function gradientColor(pct) {
   if (pct < 3)  return '#2ed573'
   if (pct < 6)  return '#ffd32a'
-  if (pct < 9)  return '#ff6348'
+  if (pct < 9)  return '#ee7800'
   if (pct < 12) return '#ff0000'
   return '#4C2E30'
 }
