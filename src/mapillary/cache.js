@@ -6,7 +6,7 @@ const STALE_MS = 90 * 24 * 60 * 60 * 1000
 
 // スコアリング・表示ロジックを変更したときはここを上げる。
 // バージョン不一致のキャッシュエントリは自動的に再フェッチされる。
-const CACHE_VERSION = 5
+const CACHE_VERSION = 7
 
 function isStale(entry) {
   return (
@@ -34,7 +34,7 @@ async function cacheSet(key, value) {
  * @param {number} idx          points 配列内のインデックス
  * @param {object} point        { lat, lon, bearing, ... }
  */
-export async function resolveImageForPoint(cachePrefix, idx, point) {
+export async function resolveImageForPoint(cachePrefix, idx, point, activeSequenceId = null) {
   const key    = `${cachePrefix}::${idx}`
   const cached = await cacheGet(key)
 
@@ -45,7 +45,7 @@ export async function resolveImageForPoint(cachePrefix, idx, point) {
   }
 
   const candidates = await fetchCandidateImages(point)
-  const best = selectBest(candidates, point.bearing)
+  const best = selectBest(candidates, point.bearing, activeSequenceId)
   await cacheSet(key, {
     v:        CACHE_VERSION,
     image:    best ? stripUrl(best) : null,

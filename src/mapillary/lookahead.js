@@ -24,9 +24,10 @@ export class MapillaryLookahead {
   #cachePrefix
   #points
   #lookaheadPoints
-  #buffer         = new Map() // index -> { status: 'pending'|'done'|'error', image }
-  #nextFetchIndex = 0
-  #inFlight       = false
+  #buffer           = new Map() // index -> { status: 'pending'|'done'|'error', image }
+  #nextFetchIndex   = 0
+  #inFlight         = false
+  #activeSequenceId = null     // 直前に選ばれた画像のsequence_id（連続性ボーナス用）
 
   /**
    * @param {string} cachePrefix  `${routeId}:f` または `${routeId}:r`
@@ -55,9 +56,10 @@ export class MapillaryLookahead {
     const pt = this.#points[idx]
     console.debug(`[Mapillary] fetching idx=${idx} lat=${pt.lat.toFixed(5)} lon=${pt.lon.toFixed(5)} bearing=${pt.bearing.toFixed(1)}°`)
     try {
-      const best = await resolveImageForPoint(this.#cachePrefix, idx, pt)
+      const best = await resolveImageForPoint(this.#cachePrefix, idx, pt, this.#activeSequenceId)
+      if (best?.sequence_id) this.#activeSequenceId = best.sequence_id
       this.#buffer.set(idx, { status: 'done', image: best, routeBearing: pt.bearing })
-      console.debug(`[Mapillary] idx=${idx} → ${best ? `id=${best.id} pano=${best.is_pano}` : 'no image'}`)
+      console.debug(`[Mapillary] idx=${idx} → ${best ? `id=${best.id} seq=${best.sequence_id}` : 'no image'}`)
     } catch (e) {
       console.warn(`[Mapillary] fetch failed idx=${idx}`, e)
       this.#buffer.set(idx, { status: 'error', image: null, routeBearing: pt.bearing })
