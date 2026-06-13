@@ -123,7 +123,7 @@ function selectRoute(record, mapView, listEl, profileSvg, onRouteSelected, rever
   const route = Route.fromGpx(record.gpxText, { reversed })
   mapView.setRoute(route)
   renderProfile(route, profileSvg)
-  onRouteSelected?.({ route, id: record.id, name: record.name })
+  onRouteSelected?.({ route, id: record.id, name: record.name, reversed })
 }
 
 function renderProfile(route, svgEl) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vcycl-v2'
+const CACHE_NAME = 'vcycl-v10'
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',

@@ -17,6 +17,17 @@ import { uploadToStrava }            from './strava/upload.js'
 import { saveRide, markUploaded, markUploadFailed } from './storage/rides.js'
 import { Route }                     from './domain/route.js'
 import { getRoute }                  from './storage/routes.js'
+import { precomputeBearings }        from './mapillary/bearing.js'
+import { MapillaryLookahead, ActiveIndexTracker } from './mapillary/lookahead.js'
+import { updatePhotoPanel, resetPhotoPanel } from './mapillary/panel.js'
+
+const MAPILLARY_ENABLED = Boolean(import.meta.env.VITE_MAPILLARY_TOKEN)
+
+// ── App version ────────────────────────────────────────────────────────
+document.getElementById('app-version').textContent = `v${__APP_VERSION__}`
+
+// ── Mapillary 起動時診断 ────────────────────────────────────────────────
+console.info(`[Mapillary] enabled: ${MAPILLARY_ENABLED}${MAPILLARY_ENABLED ? '' : ' (VITE_MAPILLARY_TOKEN 未設定)'}`)
 
 // ── DB status ──────────────────────────────────────────────────────────
 const dbStatusEl = document.getElementById('db-status')
@@ -173,11 +184,15 @@ async function loadPhysicsParams() {
 }
 
 // ── Ride controls ──────────────────────────────────────────────────────
-let rideController  = null
-let selectedRoute   = null
-let selectedRouteId = null
-let selectedRouteName = ''
-let getLiveData     = null
+let rideController           = null
+let selectedRoute            = null
+let selectedRouteId          = null
+let selectedRouteName        = ''
+let selectedPointsWithBearing  = null
+let selectedReversed           = false
+let selectedMapillaryLookahead = null
+let selectedMapillaryTracker   = null
+let getLiveData              = null
 let ftmsClient      = null
 let isDummyTrainer  = () => false
 let hudView         = null
@@ -246,6 +261,11 @@ startBtn.addEventListener('click', async () => {
   const altitudeEffectEnabled  = document.getElementById('altitude-effect-toggle').checked
 
   clearRouteSession()
+
+  // onRouteSelected 時に作成済み（index 0 がプレビュー取得済みの状態で引き継ぐ）
+  const mapillaryLookahead = selectedMapillaryLookahead
+  const mapillaryTracker   = selectedMapillaryTracker
+
   rideController = new RideController({
     route:      selectedRoute,
     routeId:    selectedRouteId,
@@ -259,6 +279,8 @@ startBtn.addEventListener('click', async () => {
     trainerDifficulty,
     altitudeEffectEnabled,
     ftmsClient:  trainerEnabled ? ftmsClient : null,
+    mapillaryLookahead,
+    mapillaryTracker,
     onFinished: (summary) => {
       rideController = null
       clearRouteSession()
@@ -361,12 +383,31 @@ async function init() {
   })
 
   await initRoutePicker(mapView, {
-    onRouteSelected: ({ route, id, name }) => {
-      selectedRoute     = route
-      selectedRouteId   = id
-      selectedRouteName = name
+    onRouteSelected: ({ route, id, name, reversed = false }) => {
+      selectedRoute             = route
+      selectedRouteId           = id
+      selectedRouteName         = name
+      selectedReversed          = reversed
+      selectedPointsWithBearing = MAPILLARY_ENABLED ? precomputeBearings(route.points) : null
       startBtn.disabled = false
       eleView?.setRoute(route)
+
+      // ルート選択時に1枚目をプレビュー表示
+      selectedMapillaryLookahead = null
+      selectedMapillaryTracker   = null
+      if (MAPILLARY_ENABLED && selectedPointsWithBearing && id != null) {
+        const cachePrefix = `${id}:${reversed ? 'r' : 'f'}`
+        const lookahead   = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
+        selectedMapillaryLookahead = lookahead
+        selectedMapillaryTracker   = new ActiveIndexTracker(selectedPointsWithBearing)
+        resetPhotoPanel()
+        // tick(0) の完了後にパネルを更新（ルートが切り替わっていたら無視）
+        lookahead.tick(0).then(() => {
+          if (selectedMapillaryLookahead !== lookahead) return
+          const { status, image, routeBearing } = lookahead.getStateFor(0)
+          updatePhotoPanel(status, image, routeBearing, 0)
+        })
+      }
     },
   })
 
@@ -394,17 +435,29 @@ async function init() {
         const trainerDifficulty     = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
         const altitudeEffectEnabled = document.getElementById('altitude-effect-toggle').checked
 
-        selectedRoute     = route
-        selectedRouteId   = routeSession.routeId
-        selectedRouteName = routeSession.routeName
+        selectedRoute             = route
+        selectedRouteId           = routeSession.routeId
+        selectedRouteName         = routeSession.routeName
+        selectedReversed          = false // セッション復元時は逆走フラグを保持しないため forward 扱い
+        selectedPointsWithBearing = MAPILLARY_ENABLED ? precomputeBearings(route.points) : null
         startBtn.disabled = false
         eleView?.setRoute(route)
+
+        let mapillaryLookahead = null
+        let mapillaryTracker   = null
+        if (MAPILLARY_ENABLED && selectedPointsWithBearing) {
+          const cachePrefix  = `${routeSession.routeId}:f`
+          mapillaryLookahead = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
+          mapillaryTracker   = new ActiveIndexTracker(selectedPointsWithBearing)
+        }
 
         rideController = new RideController({
           route, routeId: routeSession.routeId, routeName: routeSession.routeName,
           params, mapView, hudView, eleView, getLiveData, smoothingWindowSec, trainerDifficulty,
           altitudeEffectEnabled,
           ftmsClient: trainerEnabled ? ftmsClient : null,
+          mapillaryLookahead,
+          mapillaryTracker,
           onFinished: (summary) => {
             rideController = null
             clearRouteSession()

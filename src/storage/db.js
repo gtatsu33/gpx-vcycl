@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'virtualCycling'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 /** @type {import('idb').IDBPDatabase | null} */
 let db = null
@@ -27,6 +27,9 @@ export async function initDb() {
       }
       if (oldVersion < 2) {
         database.createObjectStore('workouts', { keyPath: 'id', autoIncrement: true })
+      }
+      if (oldVersion < 3) {
+        database.createObjectStore('mapillaryCache')
       }
     },
   })

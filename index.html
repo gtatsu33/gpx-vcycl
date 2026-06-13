@@ -239,8 +239,44 @@
 
     /* Map */
     #map-container { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-    #ele-view  { flex: 2 2 0; min-height: 80px; width: 100%; display: block; background: #0e1820; }
-    #map-inner { flex: 3 3 0; min-height: 0; position: relative; }
+    #ele-view  { flex: 3 3 0; min-height: 80px; width: 100%; display: block; background: #0e1820; position: relative; }
+    #map-inner { flex: 2 2 0; min-height: 0; position: relative; }
+
+    /* Mapillary photo panel — top-right 1/4 area, behind Three.js canvas */
+    .mapillary-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 50%;
+      height: 50%;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .mapillary-panel img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .mapillary-no-image {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.5);
+      background: rgba(0,0,0,0.35);
+    }
+    .mapillary-credit {
+      position: absolute;
+      bottom: 3px;
+      right: 5px;
+      font-size: 0.55rem;
+      color: rgba(255,255,255,0.85);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+      pointer-events: none;
+      white-space: nowrap;
+    }
 
     #recenter-btn {
       position: absolute; right: 14px; top: 14px; z-index: 900;
@@ -464,7 +500,7 @@
 <body>
 
   <div id="app-header">
-    <h1>gpx-vcycl</h1>
+    <h1>gpx-vcycl <span id="app-version" style="font-size:0.65rem;color:#4a6070;font-weight:400;letter-spacing:0.04em;"></span></h1>
     <p id="db-status">DB初期化中...</p>
   </div>
 
@@ -635,7 +671,9 @@
       </div><!-- #route-side-panel -->
 
       <div id="map-container">
-        <div id="ele-view" hidden></div>
+        <div id="ele-view" hidden>
+          <div id="mapillary-panel" class="mapillary-panel" hidden>no image</div>
+        </div>
         <div id="map-inner">
           <button id="recenter-btn" title="現在位置に戻る">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>

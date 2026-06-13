@@ -1,6 +1,7 @@
-import { RideSimulator } from '../domain/simulator.js'
-import { calcTorque }    from '../domain/torque.js'
-import { MovingAverage } from '../utils/smoothing.js'
+import { RideSimulator }                    from '../domain/simulator.js'
+import { calcTorque }                       from '../domain/torque.js'
+import { MovingAverage }                    from '../utils/smoothing.js'
+import { updatePhotoPanel, resetPhotoPanel } from '../mapillary/panel.js'
 
 const TICK_MS            = 100   // 10 Hz
 const SAMPLE_INTERVAL_MS = 1000  // 1 Hz recording
@@ -38,6 +39,10 @@ export class RideController {
   // Forward gradient view
   #eleView = null
 
+  // Mapillary
+  #mapillaryLookahead = null
+  #mapillaryTracker   = null
+
   // Callbacks
   #onFinished = null
 
@@ -54,6 +59,8 @@ export class RideController {
    *   onFinished?:              (summary: object|null) => void,
    *   smoothingWindowSec?:      number,
    *   gradientUpdateIntervalMs?: number,
+   *   mapillaryLookahead?:      import('../mapillary/lookahead.js').MapillaryLookahead,
+   *   mapillaryTracker?:        import('../mapillary/lookahead.js').ActiveIndexTracker,
    * }} options
    */
   constructor({
@@ -66,6 +73,8 @@ export class RideController {
     gradientUpdateIntervalMs = 1000,
     trainerDifficulty        = 0.5,
     altitudeEffectEnabled    = true,
+    mapillaryLookahead       = null,
+    mapillaryTracker         = null,
   }) {
     this.#simulator              = new RideSimulator(route, params)
     this.#simulator.altitudeEffectEnabled = altitudeEffectEnabled
@@ -82,6 +91,8 @@ export class RideController {
     this.#eleView                = eleView
     this.#trainerDifficulty      = trainerDifficulty
     this.#onFinished             = onFinished
+    this.#mapillaryLookahead     = mapillaryLookahead
+    this.#mapillaryTracker       = mapillaryTracker
     this.#gradientUpdateIntervalMs = gradientUpdateIntervalMs
 
     if (ftmsClient) {
@@ -126,6 +137,7 @@ export class RideController {
     this.#intervalId = null
     this.#simulator.reset()
     this.#paused = false
+    resetPhotoPanel()
 
     if (this.#ftmsClient?.isControllable) {
       this.#ftmsClient.reset().catch((err) => console.warn('FTMS reset failed:', err))
@@ -222,6 +234,14 @@ export class RideController {
         heartRateBpm,
       })
       this.#lastSampleAt = now
+    }
+
+    // Mapillary 写真パネル更新
+    if (this.#mapillaryTracker && this.#mapillaryLookahead) {
+      const activeIdx = this.#mapillaryTracker.update(state.distanceM)
+      this.#mapillaryLookahead.tick(activeIdx) // 非同期・await不要
+      const { status, image, routeBearing } = this.#mapillaryLookahead.getStateFor(activeIdx)
+      updatePhotoPanel(status, image, routeBearing, state.distanceM)
     }
 
     // 勾配をトレーナーへ送信（1秒ごと、または±1%急変時は即送信）

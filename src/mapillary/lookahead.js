@@ -1,0 +1,72 @@
+import { resolveImageForPoint } from './cache.js'
+
+export class ActiveIndexTracker {
+  #points
+  #activeIndex = 0
+
+  constructor(points) {
+    this.#points = points
+  }
+
+  /** currentDistanceM の単調増加を前提に activeIndex を進める。 */
+  update(currentDistanceM) {
+    while (
+      this.#activeIndex + 1 < this.#points.length &&
+      currentDistanceM >= this.#points[this.#activeIndex + 1].distanceFromStartM - 25
+    ) {
+      this.#activeIndex++
+    }
+    return this.#activeIndex
+  }
+}
+
+export class MapillaryLookahead {
+  #cachePrefix
+  #points
+  #lookaheadPoints
+  #buffer         = new Map() // index -> { status: 'pending'|'done'|'error', image }
+  #nextFetchIndex = 0
+  #inFlight       = false
+
+  /**
+   * @param {string} cachePrefix  `${routeId}:f` または `${routeId}:r`
+   * @param {Array}  points       bearing 付与済み route.points
+   * @param {number} lookaheadPoints  50m間隔前提で6≈300m先
+   */
+  constructor(cachePrefix, points, lookaheadPoints = 6) {
+    this.#cachePrefix     = cachePrefix
+    this.#points          = points
+    this.#lookaheadPoints = lookaheadPoints
+  }
+
+  async tick(activeIndex) {
+    for (const idx of this.#buffer.keys()) {
+      if (idx < activeIndex - 1) this.#buffer.delete(idx)
+    }
+
+    if (this.#inFlight) return
+
+    const target = activeIndex + this.#lookaheadPoints
+    if (this.#nextFetchIndex > target || this.#nextFetchIndex >= this.#points.length) return
+
+    const idx = this.#nextFetchIndex++
+    this.#buffer.set(idx, { status: 'pending', image: null })
+    this.#inFlight = true
+    const pt = this.#points[idx]
+    console.debug(`[Mapillary] fetching idx=${idx} lat=${pt.lat.toFixed(5)} lon=${pt.lon.toFixed(5)} bearing=${pt.bearing.toFixed(1)}°`)
+    try {
+      const best = await resolveImageForPoint(this.#cachePrefix, idx, pt)
+      this.#buffer.set(idx, { status: 'done', image: best, routeBearing: pt.bearing })
+      console.debug(`[Mapillary] idx=${idx} → ${best ? `id=${best.id} pano=${best.is_pano}` : 'no image'}`)
+    } catch (e) {
+      console.warn(`[Mapillary] fetch failed idx=${idx}`, e)
+      this.#buffer.set(idx, { status: 'error', image: null, routeBearing: pt.bearing })
+    } finally {
+      this.#inFlight = false
+    }
+  }
+
+  getStateFor(index) {
+    return this.#buffer.get(index) ?? { status: 'pending', image: null, routeBearing: null }
+  }
+}

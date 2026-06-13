@@ -1,4 +1,7 @@
 import { defineConfig } from 'vite'
+import { readFileSync } from 'node:fs'
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 // mode=https: HTTPS + LAN 公開（iPad/Bluefy 向け）
 // mode=development (デフォルト): HTTP localhost のみ
@@ -30,6 +33,9 @@ export default defineConfig(async ({ mode }) => {
   }
 
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(version),
+    },
     plugins,
     server: {
       host: serverHost,
