@@ -21,6 +21,7 @@ export class MapView {
       maxZoom: 19,
     }).addTo(this.#map)
     this.#map.on('dragstart', () => { this.#followMode = false })
+    new ResizeObserver(() => this.#map.invalidateSize()).observe(containerEl)
   }
 
   setRoute(route) {

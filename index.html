@@ -238,19 +238,19 @@
     }
 
     /* Map */
-    #map-container { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-    #ele-view  { flex: 3 3 0; min-height: 80px; width: 100%; display: block; background: #0e1820; position: relative; }
-    #map-inner { flex: 2 2 0; min-height: 0; position: relative; }
+    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: column; }
+    #ele-view  { flex: 3; min-height: 80px; background: #0e1820; position: relative; }
+    #map-bottom-row { flex: 2; min-height: 0; display: flex; flex-direction: row; }
+    #map-inner { flex: 1; min-width: 0; position: relative; }
 
-    /* Mapillary photo panel — top-right 1/4 area, behind Three.js canvas */
+    /* Mapillary photo panel — 3Dマップ下、2Dマップと横並び */
     .mapillary-panel {
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 50%;
-      height: 50%;
+      flex: 1;
+      min-width: 0;
+      position: relative;
       overflow: hidden;
       pointer-events: none;
+      background: #0a0c10;
     }
     .mapillary-panel img {
       width: 100%;
@@ -671,13 +671,14 @@
       </div><!-- #route-side-panel -->
 
       <div id="map-container">
-        <div id="ele-view" hidden>
+        <div id="ele-view" hidden></div>
+        <div id="map-bottom-row">
           <div id="mapillary-panel" class="mapillary-panel" hidden>no image</div>
-        </div>
-        <div id="map-inner">
-          <button id="recenter-btn" title="現在位置に戻る">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-          </button>
+          <div id="map-inner">
+            <button id="recenter-btn" title="現在位置に戻る">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
+            </button>
+          </div>
         </div>
       </div>
 

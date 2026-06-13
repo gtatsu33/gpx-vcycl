@@ -100,7 +100,7 @@ export class EleView {
       this.#edgeMesh.geometry.dispose()
       this.#edgeMesh = null
     }
-    this.#pts3D   = buildPts3D(route.points)
+    this.#pts3D   = buildPts3D(route.points, (d) => route.getGradientAt(d))
     const { mesh: rm, segDistM: rDistM } = buildRibbonMesh(this.#pts3D)
     this.#mesh = rm
     this.#scene.add(this.#mesh)
@@ -351,7 +351,7 @@ function makeSignSprite(topText, bottomText, bgColor, borderColor, topColor, bot
   return sprite
 }
 
-function buildPts3D(points) {
+function buildPts3D(points, getGrad = (d, pt) => pt.gradientPercent ?? 0) {
   const lat0   = points[0].lat
   const lon0   = points[0].lon
   const cosLat = Math.cos(lat0 * DEG2RAD)
@@ -360,7 +360,7 @@ function buildPts3D(points) {
     y:     (pt.elevationM ?? 0) * Y_EXAG,
     z:    -(pt.lat - lat0) * EARTH_R * DEG2RAD,
     distM:  pt.distanceFromStartM,
-    grad:   pt.gradientPercent ?? 0,
+    grad:   getGrad(pt.distanceFromStartM, pt),
   }))
 }
 
