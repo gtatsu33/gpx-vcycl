@@ -106,11 +106,12 @@ export class RideController {
 
   start() {
     if (this.#intervalId) return
+    const now          = Date.now()
     this.#paused       = false
-    this.#startedAt    = new Date()
+    this.#startedAt    = new Date(now)
     this.#samples      = []
-    this.#lastSampleAt = 0
-    this.#lastTickAt   = Date.now()
+    this.#lastSampleAt = now - SAMPLE_INTERVAL_MS
+    this.#lastTickAt   = now
     this.#simulator.resume()
     this.#intervalId = setInterval(() => this.#tick(), TICK_MS)
   }
@@ -219,21 +220,23 @@ export class RideController {
       altitudeM:       this.#route.getElevationAt(state.distanceM),
     })
 
-    // 1Hz サンプリング
-    if (now - this.#lastSampleAt >= SAMPLE_INTERVAL_MS) {
+    // 1Hz サンプリング（1秒グリッドに補間）
+    while (now - this.#lastSampleAt >= SAMPLE_INTERVAL_MS) {
+      this.#lastSampleAt += SAMPLE_INTERVAL_MS
+      const overshootSec = (now - this.#lastSampleAt) / 1000
+      const distM = Math.max(0, state.distanceM - state.velocityMs * overshootSec)
       this.#samples.push({
-        timestampMs:    now,
-        lat:            state.currentLat,
-        lon:            state.currentLon,
-        elevationM:     this.#route.getElevationAt(state.distanceM),
-        distanceM:      state.distanceM,
-        velocityMs:     state.velocityMs,
+        timestampMs:     this.#lastSampleAt,
+        lat:             state.currentLat,
+        lon:             state.currentLon,
+        elevationM:      this.#route.getElevationAt(distM),
+        distanceM:       distM,
+        velocityMs:      state.velocityMs,
         gradientPercent: state.currentGradientPercent,
         powerW:          effectivePowerW,
         cadenceRpm:      smoothCadence,
         heartRateBpm,
       })
-      this.#lastSampleAt = now
     }
 
     // Mapillary 写真パネル更新

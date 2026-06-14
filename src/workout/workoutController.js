@@ -149,17 +149,18 @@ export class WorkoutController {
 
   start() {
     if (this.#intervalId) return
-    this.#paused      = false
-    this.#startedAt   = new Date()
-    this.#elapsedMs   = 0
-    this.#distanceM   = 0
-    this.#velocityMs  = 0
-    this.#samples     = []
-    this.#lastSampleAt = 0
-    this.#tickAt      = Date.now()
+    const now          = Date.now()
+    this.#paused       = false
+    this.#startedAt    = new Date(now)
+    this.#elapsedMs    = 0
+    this.#distanceM    = 0
+    this.#velocityMs   = 0
+    this.#samples      = []
+    this.#lastSampleAt = now - SAMPLE_INTERVAL_MS
+    this.#tickAt       = now
     // ルートライドの Simulation Parameters など前のセッションの状態を確実にクリアする
     this.#ergPrepare()
-    this.#intervalId  = setInterval(() => this.#tick(), TICK_MS)
+    this.#intervalId   = setInterval(() => this.#tick(), TICK_MS)
   }
 
   pause() {
@@ -172,21 +173,25 @@ export class WorkoutController {
 
   resume() {
     if (!this.#paused) return
+    const now                = Date.now()
     this.#paused             = false
     this.#manualPauseSawZero = false
     this.#zeroPowerCount     = 0
     this.#highPowerCount     = 0
+    this.#lastSampleAt       = now  // ポーズ中の空白期間をキャッチアップしない
+    this.#tickAt             = now
     // RESET 後に制御権を再取得してから ERG を再開する
     this.#ergPrepare()
-    this.#tickAt = Date.now()
   }
 
   resumeFromAutoPause() {
     if (!this.#autoPaused) return
+    const now            = Date.now()
     this.#autoPaused     = false
     this.#zeroPowerCount = 0
     this.#highPowerCount = 0
-    this.#tickAt         = Date.now()
+    this.#lastSampleAt   = now  // ポーズ中の空白期間をキャッチアップしない
+    this.#tickAt         = now
     this.#onAutoResume?.()
   }
 
@@ -260,17 +265,19 @@ export class WorkoutController {
       velocityMs:  this.#velocityMs,
     })
 
-    // 1Hzサンプリング
-    if (!effectivePaused && now - this.#lastSampleAt >= SAMPLE_INTERVAL_MS) {
+    // 1Hzサンプリング（1秒グリッドに補間）
+    while (!effectivePaused && now - this.#lastSampleAt >= SAMPLE_INTERVAL_MS) {
+      this.#lastSampleAt += SAMPLE_INTERVAL_MS
+      const overshootSec = (now - this.#lastSampleAt) / 1000
+      const distM = Math.max(0, this.#distanceM - this.#velocityMs * overshootSec)
       this.#samples.push({
-        timestampMs:  now,
+        timestampMs:  this.#lastSampleAt,
         powerW:       smoothPowerW,
         cadenceRpm:   smoothCadence,
         heartRateBpm,
-        distanceM:    this.#distanceM,
+        distanceM:    distM,
         velocityMs:   this.#velocityMs,
       })
-      this.#lastSampleAt = now
     }
 
     // 終了判定
@@ -316,7 +323,8 @@ export class WorkoutController {
           this.#autoPaused     = false
           this.#zeroPowerCount = 0
           this.#highPowerCount = 0
-          this.#tickAt         = Date.now()
+          this.#lastSampleAt   = now
+          this.#tickAt         = now
           this.#onAutoResume?.()
         }
       }
@@ -327,7 +335,8 @@ export class WorkoutController {
         this.#manualPauseSawZero = false
         this.#zeroPowerCount     = 0
         this.#highPowerCount     = 0
-        this.#tickAt             = Date.now()
+        this.#lastSampleAt       = now
+        this.#tickAt             = now
         this.#onAutoResume?.()
       }
     }
