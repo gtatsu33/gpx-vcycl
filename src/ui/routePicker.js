@@ -1,4 +1,5 @@
 import { saveRoute, listRoutes, deleteRoute } from '../storage/routes.js'
+import { listRemoteGpxFiles, downloadRemoteGpx } from '../storage/remoteRoutes.js'
 import { Route } from '../domain/route.js'
 
 /**
@@ -6,19 +7,26 @@ import { Route } from '../domain/route.js'
  * @param {{ onRouteSelected?: (route: import('../domain/route.js').Route) => void }} [opts]
  */
 export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
-  const loadBtn      = document.getElementById('load-gpx-btn')
-  const fileInput    = document.getElementById('gpx-file-input')
-  const routeListEl  = document.getElementById('route-list')
-  const profileSvg   = document.getElementById('elevation-profile')
+  const loadLocalBtn  = document.getElementById('load-local-gpx-btn')
+  const loadRemoteBtn = document.getElementById('load-remote-gpx-btn')
+  const fileInput     = document.getElementById('gpx-file-input')
+  const routeListEl   = document.getElementById('route-list')
+  const profileSvg    = document.getElementById('elevation-profile')
 
-  const overlay      = document.getElementById('route-name-overlay')
-  const nameInput    = document.getElementById('route-name-input')
-  const cancelBtn    = document.getElementById('route-name-cancel')
-  const saveBtn      = document.getElementById('route-name-save')
+  const overlay    = document.getElementById('route-name-overlay')
+  const nameInput  = document.getElementById('route-name-input')
+  const cancelBtn  = document.getElementById('route-name-cancel')
+  const saveBtn    = document.getElementById('route-name-save')
+
+  const remoteOverlay   = document.getElementById('remote-gpx-overlay')
+  const remoteStatus    = document.getElementById('remote-gpx-status')
+  const remoteList      = document.getElementById('remote-gpx-list')
+  const remoteCancelBtn = document.getElementById('remote-gpx-cancel')
 
   let pendingGpxText = null
 
-  loadBtn.addEventListener('click', () => fileInput.click())
+  // ── Local file load ──
+  loadLocalBtn.addEventListener('click', () => fileInput.click())
 
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0]
@@ -41,6 +49,76 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
     reader.readAsText(file)
   })
 
+  // ── Remote file load ──
+  loadRemoteBtn.addEventListener('click', () => openRemotePicker())
+
+  remoteCancelBtn.addEventListener('click', () => {
+    remoteOverlay.classList.remove('open')
+  })
+
+  remoteOverlay.addEventListener('click', (e) => {
+    if (e.target === remoteOverlay) remoteOverlay.classList.remove('open')
+  })
+
+  async function openRemotePicker() {
+    remoteList.innerHTML = ''
+    remoteStatus.textContent = '読み込み中...'
+    remoteOverlay.classList.add('open')
+
+    let files
+    try {
+      files = await listRemoteGpxFiles()
+    } catch (err) {
+      remoteStatus.textContent = `取得に失敗しました: ${err.message}`
+      return
+    }
+
+    if (files.length === 0) {
+      remoteStatus.textContent = 'GPXファイルが見つかりませんでした'
+      return
+    }
+
+    remoteStatus.textContent = `${files.length} 件`
+
+    for (const file of files) {
+      const btn = document.createElement('button')
+      btn.className = 'remote-gpx-item'
+      btn.textContent = file.name
+      btn.addEventListener('click', () => loadRemoteFile(file.name))
+      remoteList.appendChild(btn)
+    }
+  }
+
+  async function loadRemoteFile(fileName) {
+    remoteStatus.textContent = `ダウンロード中: ${fileName}`
+    remoteList.querySelectorAll('button').forEach((b) => (b.disabled = true))
+
+    let gpxText
+    try {
+      gpxText = await downloadRemoteGpx(fileName)
+    } catch (err) {
+      remoteStatus.textContent = `ダウンロードに失敗しました: ${err.message}`
+      remoteList.querySelectorAll('button').forEach((b) => (b.disabled = false))
+      return
+    }
+
+    remoteOverlay.classList.remove('open')
+
+    pendingGpxText = gpxText
+    try {
+      const { name } = Route.fromGpx(pendingGpxText)
+      const fileBaseName = fileName.replace(/\.gpx$/i, '').replace(/_gne$/i, '')
+      nameInput.value = (name && name !== 'ルート') ? name : fileBaseName
+    } catch (err) {
+      alert(`GPXの読み込みに失敗しました: ${err.message}`)
+      pendingGpxText = null
+      return
+    }
+    overlay.classList.add('open')
+    nameInput.select()
+  }
+
+  // ── Route name modal ──
   cancelBtn.addEventListener('click', () => {
     overlay.classList.remove('open')
     pendingGpxText = null

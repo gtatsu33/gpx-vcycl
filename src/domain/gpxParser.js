@@ -42,7 +42,11 @@ export function parseGpx(gpxText) {
     return el ? el.textContent.trim() : ''
   }
 
-  const name = getText(doc, 'name') || 'ルート'
+  const metaEl = getEls(doc, 'metadata')[0]
+  const trkEl  = getEls(doc, 'trk')[0]
+  const name   = (metaEl ? getText(metaEl, 'name') : '')
+              || (trkEl  ? getText(trkEl,  'name')  : '')
+              || 'ルート'
 
   const rawPoints = []
   let prevKey = null

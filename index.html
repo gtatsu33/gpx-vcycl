@@ -167,8 +167,7 @@
       display: flex; flex-direction: column; gap: 0.5rem;
       padding: 0.75rem; flex: 1;
     }
-    #route-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    #load-gpx-btn { flex: 1; }
+    #route-controls { display: flex; flex-direction: column; gap: 0.4rem; }
 
     #route-list {
       display: flex; flex-direction: column; gap: 0.35rem;
@@ -322,6 +321,20 @@
       width: 100%; height: 52px; flex-shrink: 0;
       background: #0a0c10; border-top: 1px solid #2c4055;
     }
+
+    /* Remote GPX picker modal */
+    #remote-gpx-list {
+      display: flex; flex-direction: column; gap: 0.35rem;
+      max-height: 55dvh; overflow-y: auto; min-height: 2rem;
+    }
+    .remote-gpx-item {
+      text-align: left; padding: 0.5rem 0.75rem;
+      background: #19222e; border: 1px solid #2c4055;
+      border-radius: 7px; font-size: 0.85rem; color: #ccd8e4;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .remote-gpx-item:hover { border-color: #38bdf8; background: #0d2436; }
+    #remote-gpx-status { font-size: 0.8rem; color: #6080a0; min-height: 1.4em; }
 
     /* Portrait fallback */
     @media (orientation: portrait) {
@@ -601,7 +614,8 @@
 
         <div id="pre-ride-panel">
           <div id="route-controls">
-            <button id="load-gpx-btn">GPXを読み込む</button>
+            <button id="load-local-gpx-btn">ローカルからGPXファイルを読み込む</button>
+            <button id="load-remote-gpx-btn">ネットワークからGPXを読み込む</button>
             <input type="file" id="gpx-file-input" accept=".gpx" hidden />
           </div>
           <div id="route-list"></div>
@@ -931,6 +945,18 @@
       <div class="modal-buttons">
         <button id="strava-warning-cancel">キャンセル</button>
         <button id="strava-warning-proceed" style="border-color:#fbbf24;color:#fbbf24;">未接続のまま走行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remote GPX picker modal -->
+  <div id="remote-gpx-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>ネットワークからGPXを選択</h2>
+      <p id="remote-gpx-status">読み込み中...</p>
+      <div id="remote-gpx-list"></div>
+      <div class="modal-buttons" style="margin-top:0.5rem;">
+        <button id="remote-gpx-cancel">キャンセル</button>
       </div>
     </div>
   </div>
