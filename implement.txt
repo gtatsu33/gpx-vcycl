@@ -1,0 +1,1155 @@
+================================================================================
+  gpx-vcycl 実装仕様書 — Vanilla JS (ESM) + Vite / Cloudflare Pages
+  バージョン: 1.0
+  作成日: 2026-07-11
+  前提: spec.txt の機能仕様を満たすための実装ガイド。現在の実装
+    （v2.6.1時点）に即して記載している「現状ドキュメント」を兼ねる。
+  ※ DBスキーマ（リモートGPXソースのSupabase側）は db.v4.md を参照。
+    本書はローカル IndexedDB スキーマのみ扱う。
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+0. 実装フェーズ（実装済み）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+段階的に実装されており、全フェーズ完了済み（2026-07-11時点）。
+各フェーズの詳細プロンプトは .claude/prompts/phase-*.md 参照。
+
+  フェーズ   内容                                              状態
+  ────────   ──────────────────────────────────────────────   ──────
+  0          プロジェクト基盤（PWA・Vite・IndexedDB）           完了
+  1a         BLE接続（FTMSのみ）                                完了
+  1b         BLE接続（CPS・HRS）+ パワーソース選択              完了
+  2          GPX読み込み + マップ描画 + 勾配計算                完了
+  3          仮想位置進行ロジック + HUD                         完了
+  4          FTMS Simulation Parameters送信（負荷制御）         完了
+  5          ライド記録 → FIT生成 → Strava OAuth + アップロード 完了
+  (追加)     ワークアウト（ZWO/ERGモード）                      完了
+  (追加)     実写風景写真（Mapillary風ルックアヘッド表示）      完了
+  (追加)     3Dマップ（Three.js）＋Route画面HUDオーバーレイ化   完了
+             （10章参照）
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. 技術スタック
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ホスティング   : Cloudflare Pages（静的ホスティング + Pages Functions）
+  フロントエンド : Vanilla JavaScript（ESモジュール、フレームワークなし）
+  ビルド        : Vite 8
+  ストレージ     : IndexedDB（idbライブラリでラップ）
+  BLE           : Web Bluetooth API（navigator.bluetooth）
+  地図(2D)       : Leaflet.js（OpenStreetMapタイル）
+  地図(2D、代替) : Google Maps JavaScript API + Street View
+                   （オーナーモード限定、googleMapView.js）
+  3Dマップ       : Three.js（WebGLRenderer、手組みのジオメトリ生成）
+  外部DB(リモートGPX): Supabase JS クライアント（Storage読み取りのみ）
+  サーバー処理    : Cloudflare Pages Functions（Strava OAuth秘匿・
+                   オーナーモード認証のみ。それ以外はクライアント完結）
+  テスト         : Vitest + jsdom
+  CSSフレームワーク: なし（素のCSS、index.html内に直書き）
+
+  ※ npm run build の出力は dist/、Cloudflare Pages にそのままデプロイする。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. パッケージ構成
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  dependencies:
+    @supabase/supabase-js   ^2.108.2   # リモートGPX読み込みのみに使用
+    idb                     ^8.0.0     # IndexedDBラッパー
+    leaflet                 ^1.9.4     # 2Dマップ
+    three                   ^0.184.0   # 3Dマップ描画
+
+  devDependencies:
+    vite                     ^8.0.14
+    vitest                   ^4.1.7
+    jsdom                    ^29.1.1
+    @vitejs/plugin-basic-ssl ^2.3.0    # ローカル開発用の自己署名HTTPS
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. ディレクトリ構成
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  gpx-vcycl/
+  ├── index.html                    # 単一HTML、全タブ・全モーダルを内包
+  ├── vite.config.js                # 本番ビルド用
+  ├── vite.config.local.js          # ローカル開発用（HTTPS/LAN公開切替）
+  ├── package.json
+  ├── db.v4.md                      # リモートGPXソースのDB仕様（別文書）
+  ├── spec.txt / implement.txt      # 本書
+  │
+  ├── functions/                    # Cloudflare Pages Functions
+  │   ├── strava-exchange.js        # OAuth認可コード→トークン交換
+  │   ├── strava-refresh.js         # トークンリフレッシュ
+  │   └── api/
+  │       └── auth.js               # オーナーモードのパスコード検証
+  │
+  ├── public/
+  │   ├── manifest.json             # PWAマニフェスト
+  │   ├── sw.js                     # Service Worker（キャッシュ戦略）
+  │   └── icons/, favicon.*         # アイコン類
+  │
+  ├── src/
+  │   ├── main.js                   # エントリーポイント。全体配線
+  │   │
+  │   ├── ble/                      # BLE通信モジュール
+  │   │   ├── constants.js          # UUID・フラグ・opcode定数
+  │   │   ├── ftms.js / ftms.mock.js
+  │   │   ├── cps.js  / cps.mock.js
+  │   │   ├── hrs.js  / hrs.mock.js
+  │   │   └── cadence.js            # CPSクランクデータ→ケイデンス変換
+  │   │
+  │   ├── domain/                   # 物理モデル・ルートロジック
+  │   │   ├── gpxParser.js          # GPX(XML)パース
+  │   │   ├── route.js              # Routeクラス（勾配・標高補間）
+  │   │   ├── physics.js            # 速度シミュレーション式
+  │   │   ├── torque.js             # トルク計算
+  │   │   └── simulator.js          # RideSimulator（route+physics統合）
+  │   │
+  │   ├── ride/
+  │   │   └── rideController.js     # ライド実行のtickループ・記録・FTMS送信
+  │   │
+  │   ├── workout/
+  │   │   ├── zwoParser.js          # ZWO(XML)パース
+  │   │   └── workoutController.js  # ワークアウト実行・ERGモード
+  │   │
+  │   ├── storage/                  # IndexedDB操作
+  │   │   ├── db.js                 # DB初期化・スキーマ
+  │   │   ├── routes.js
+  │   │   ├── rides.js
+  │   │   ├── workouts.js
+  │   │   └── remoteRoutes.js       # Supabase Storage経由のリモートGPX
+  │   │
+  │   ├── export/
+  │   │   └── fitWriter.js          # FIT形式バイナリ生成（自前実装）
+  │   │
+  │   ├── strava/
+  │   │   ├── auth.js                # OAuthフロー・トークン管理
+  │   │   └── upload.js              # アップロード・処理状況ポーリング
+  │   │
+  │   ├── mapillary/                 # 実写風景写真ルックアヘッド機能
+  │   │   ├── api.js                 # 外部API呼び出し
+  │   │   ├── bearing.js             # ルート進行方位の事前計算
+  │   │   ├── score.js               # 候補画像のスコアリング・選定
+  │   │   ├── cache.js               # IndexedDBキャッシュ
+  │   │   ├── lookahead.js           # 先読みバッファ管理
+  │   │   └── panel.js               # DOM描画（#mapillary-panel）
+  │   │
+  │   ├── ui/
+  │   │   ├── deviceManager.js       # デバイスタブ全体
+  │   │   ├── routePicker.js         # ルート一覧・読み込みUI
+  │   │   ├── hud.js                 # ライド中HUD（10-2/10-3節参照）
+  │   │   ├── eleView.js             # 3Dマップ（Three.js）
+  │   │   ├── map.js                 # 2Dマップ（Leaflet、MapView）
+  │   │   ├── googleMapView.js       # 2Dマップ代替（オーナーモード）
+  │   │   ├── mapFactory.js          # map.js/googleMapView.js の選択
+  │   │   ├── workoutTab.js          # ワークアウトタブ全体
+  │   │   ├── rideEndModal.js        # ライド終了モーダル
+  │   │   └── rideHistory.js         # 履歴タブ
+  │   │
+  │   └── utils/
+  │       ├── smoothing.js           # MovingAverage（移動平均）
+  │       └── ownerMode.js           # オーナーモード判定
+  │
+  └── test/                          # Vitest テスト
+      ├── ble/                       # BLEパース・エンコードのテスト
+      ├── domain/                    # GPX/勾配/物理/トルク/シミュレータ
+      ├── export/                    # FIT生成
+      ├── db.test.js
+      └── fixtures/                  # テスト用GPXファイル
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. 環境変数
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Vite はクライアントに公開する環境変数に VITE_ プレフィックスが必要。
+
+  変数名                       用途                              参照箇所
+  ──────────────────────────   ────────────────────────────────  ─────────────────
+  VITE_MAPILLARY_TOKEN         実写風景写真APIトークン            main.js, mapillary/api.js
+                                （未設定で機能自体を無効化）
+  VITE_SUPABASE_URL            リモートGPXソース(Supabase)URL     storage/remoteRoutes.js
+  VITE_SUPABASE_ANON_KEY       同anon key                        storage/remoteRoutes.js
+  VITE_SUPABASE_BUCKET         同バケット名（既定 gpx_routes）    storage/remoteRoutes.js
+  VITE_STRAVA_CLIENT_ID        Strava OAuth クライアントID        strava/auth.js
+  VITE_STRAVA_REDIRECT_URI     Strava OAuth リダイレクトURI       strava/auth.js
+  VITE_GOOGLE_MAPS_API_KEY     Google Maps/Street View（オーナー） ui/googleMapView.js
+
+  サーバー側専用（Cloudflare Pages の環境変数。VITE_プレフィックス無し、
+  クライアントに公開されない）:
+    STRAVA_CLIENT_SECRET        functions/strava-exchange.js,
+                                 functions/strava-refresh.js が使用
+    OWNER_PASSCODE               functions/api/auth.js が使用
+
+  .env.local（ローカル開発用・git管理外）に VITE_ 変数を記入する。
+  Cloudflare Pages ダッシュボードの「Settings → Environment variables」に
+  Production/Preview両方で同じキーを登録する（サーバー側専用変数も同所）。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. IndexedDBスキーマ（src/storage/db.js）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  DB名: virtualCycling　　DBバージョン: 3（idbのopenDB、upgrade内で
+  バージョンごとに段階的にストアを追加）
+
+  ストア          keyPath        追加バージョン   内容
+  ──────────────  ─────────────  ──────────────  ─────────────────────────
+  routes          id (auto)      v1               保存済みGPXルート
+  rides           id (auto)      v1               保存済みライド記録
+  settings        なし(KV)       v1               設定値・トークン類
+  workouts        id (auto)      v2               保存済みZWOワークアウト
+  mapillaryCache  なし(KV)       v3               実写写真選定結果キャッシュ
+
+  ※ インデックス（createIndex）は使用していない。一覧はgetAll()で
+    全件取得し、必要に応じてJS側でソート・フィルタする。
+
+  エクスポート:
+    initDb(): Promise<IDBPDatabase>   起動時に1回呼ぶ。DBを開き
+      アップグレードし、モジュール内キャッシュに保持する。
+    getDb(): IDBPDatabase             キャッシュ済みDBを返す。
+      initDb()未呼び出し時は例外を投げる。
+
+────────────────────────────────────────
+5-1. routes ストア（レコード形状）
+────────────────────────────────────────
+  { id, name, gpxText, totalDistanceM, totalElevationGainM, savedAt }
+
+  API（storage/routes.js）:
+    saveRoute({name, gpxText}) → id     Route.fromGpx()で検証してから保存
+    getRoute(id) → record|undefined
+    listRoutes() → record[]
+    deleteRoute(id) → void
+
+────────────────────────────────────────
+5-2. rides ストア（レコード形状）
+────────────────────────────────────────
+  {
+    id, routeId, routeName, startedAt, endedAt,
+    totalDistanceM, totalElapsedSec,
+    avgPowerW, avgCadenceRpm, avgHeartRateBpm,
+    samples: [{ timestampMs, lat?, lon?, elevationM?, distanceM,
+                velocityMs, gradientPercent?, powerW, cadenceRpm,
+                heartRateBpm }],
+    uploadStatus: 'pending' | 'uploaded' | 'failed',
+    uploadedAt, stravaActivityId, uploadError,
+  }
+  （lat/lon/elevationM/gradientPercentはルートモードのみ。ワークアウト
+    記録には含まれない）
+
+  API（storage/rides.js）:
+    saveRide(summary) → id              集計値を計算して保存
+    listRides() → record[]              startedAt降順でソート
+    getRide(id) → record
+    markUploaded(rideId, stravaActivityId) → key
+    markUploadFailed(rideId, errorMsg) → key
+    deleteRide(id) → void
+
+────────────────────────────────────────
+5-3. workouts ストア（レコード形状）
+────────────────────────────────────────
+  { id, name, zwoText, totalDurationS, createdAt }
+
+  API（storage/workouts.js）:
+    saveWorkout({name, zwoText, totalDurationS}) → id
+    listWorkouts() → record[]
+    deleteWorkout(id) → void
+
+────────────────────────────────────────
+5-4. settings ストア（キー一覧）
+────────────────────────────────────────
+  キー                    値の型      既定値（main.js側フォールバック）
+  ──────────────────────  ──────────  ─────────────────────────────────
+  riderWeightKg           number      70
+  bikeWeightKg            number      10
+  cdA                     number      0.32
+  crr                     number      0.005
+  smoothingWindowSec      number      3
+  ftpW                    number      170
+  trainerControlEnabled   boolean     true
+  altitudeEffectEnabled   boolean     true
+  trainerDifficulty       number      0.5
+  powerSource             string      'trainer' | 'powerMeter'（既定trainer）
+  mapProvider             string      'osm' | 'google'（既定osm）
+  stravaTokens            object      { accessToken, refreshToken,
+                                         expiresAt, athleteId, athleteName }
+  lastFtmsDeviceId        string      直近接続デバイス名（再接続補助）
+  lastCpsDeviceId         string      同上
+  lastHrsDeviceId         string      同上
+
+────────────────────────────────────────
+5-5. remoteRoutes（Supabase Storage、IndexedDB外）
+────────────────────────────────────────
+  storage/remoteRoutes.js:
+    listRemoteGpxFiles() → [{name, id, updated_at}]  バケット直下を
+      name昇順・上限200件でlist()し、.gpx拡張子のみフィルタ
+    downloadRemoteGpx(fileName) → gpxText文字列
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. BLEモジュール（src/ble/）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+マジックナンバー禁止方針に従い、UUID・フラグ・opcodeはすべて
+constants.js に集約する。
+
+────────────────────────────────────────
+6-1. constants.js
+────────────────────────────────────────
+  FTMS: FTMS_SERVICE_UUID(0x1826), INDOOR_BIKE_DATA_UUID(0x2AD2),
+    FITNESS_MACHINE_FEATURE_UUID(0x2ACC), FITNESS_MACHINE_STATUS_UUID(0x2ADA),
+    FITNESS_MACHINE_CONTROL_POINT_UUID(0x2AD9)
+  IBD_FLAG: Indoor Bike Dataのビットフラグ（MORE_DATA以下13ビット、
+    ビット0は「立っていれば瞬間速度が“ない”」という逆論理点に注意）
+  CPS: CPS_SERVICE_UUID(0x1818), CYCLING_POWER_MEASUREMENT_UUID(0x2A63),
+    CYCLING_POWER_FEATURE_UUID(0x2A65), SENSOR_LOCATION_UUID(0x2A5D)
+  CPM_FLAG: Cycling Power Measurementのビットフラグ（13ビット）
+  HRS: HRS_SERVICE_UUID(0x180D), HEART_RATE_MEASUREMENT_UUID(0x2A37)
+  FTMS_OPCODE: REQUEST_CONTROL(0x00), RESET(0x01),
+    SET_TARGET_RESISTANCE_LEVEL(0x04), SET_TARGET_POWER(0x05),
+    START_OR_RESUME(0x07), STOP_OR_PAUSE(0x08),
+    SET_INDOOR_BIKE_SIMULATION_PARAMS(0x11), RESPONSE_CODE(0x80)
+  FTMS_RESULT: SUCCESS(0x01), OP_CODE_NOT_SUPPORTED(0x02),
+    INVALID_PARAMETER(0x03), OPERATION_FAILED(0x04),
+    CONTROL_NOT_PERMITTED(0x05)
+
+────────────────────────────────────────
+6-2. ftms.js
+────────────────────────────────────────
+  定数: COMMAND_TIMEOUT_MS=3000, GRADIENT_CLIP_PCT=25,
+    CRR_MAX=0.0254, WIND_RESISTANCE_MAX=2.55
+
+  parseIndoorBikeData(dataView) → object
+    2バイトフラグ(uint16 LE)を先頭に読み、フラグに応じてオフセットを
+    進めながら以下を条件付きで抽出:
+      speedKmh(uint16×0.01), averageSpeedKmh, cadenceRpm(uint16×0.5),
+      averageCadenceRpm, totalDistanceM(uint24), resistanceLevel(int16),
+      powerW(int16), averagePowerW, totalEnergyKj/energyPerHourKj/
+      energyPerMinuteKj, heartRateBpm(uint8), metabolicEquivalent(uint8×0.1),
+      elapsedTimeS(uint16), remainingTimeS(uint16)
+    byteLength<2 で例外。
+
+  encodeSimulationParams({windSpeedMs, gradientPercent, crr,
+    windResistanceCoef}) → Uint8Array(7)
+    Set Indoor Bike Simulation Parameters (opcode 0x11) をエンコード:
+      byte0: opcode(0x11)
+      byte1-2: 風速 sint16 LE, 分解能0.001 m/s
+      byte3-4: 勾配 sint16 LE, 分解能0.01%, ±25%クリップ
+      byte5: Crr uint8, 分解能0.0001, [0, 0.0254]でクランプ
+      byte6: 風抵抗係数 uint8, 分解能0.01 kg/m, [0, 2.55]でクランプ
+
+  parseControlPointResponse(dataView) → {requestOpcode, resultCode}|null
+    byte0===0x80(RESPONSE_CODE)を検証。
+
+  class FtmsClient:
+    connect(nameHint?) / connectToDevice(device) / disconnect()
+    onIndoorBikeData(cb) / onConnectionStateChange(cb) / onControlLog(cb)
+    get isConnected / get isControllable
+    requestControl() → opcode 0x00送信
+    setSimulationParameters({windSpeedMs=0, gradientPercent, crr,
+      windResistanceCoef}) → opcode 0x11送信（要Control Point）
+    setTargetPower(powerW) → opcode 0x05送信、ERGモード用（要Control Point）
+    reset() → opcode 0x01送信
+    接続時、Indoor Bike Data通知の購読に加えてControl Point取得を試み、
+    失敗時はログのみ残しread-onlyで継続動作する（フォールバック）。
+    コマンド送信は#sendCommand()で1コマンドずつ、3秒タイムアウト付き
+    Promiseでラップし、Control Point通知の応答と突き合わせて解決する。
+
+  ftms.mock.js: class MockFtmsClient — 同一の公開インターフェース
+    （setTargetPower/connectToDeviceは無し）。connect()から300ms後に
+    100ms間隔でサイン波の疑似Indoor Bike Dataを生成
+    （speedKmh=25+5sin(0.5t), cadenceRpm=80+10sin(0.3t),
+    powerW=200+50sin(t)）。isControllableは接続時常にtrue、
+    setSimulationParameters/resetはconsole.logのみ。
+
+────────────────────────────────────────
+6-3. cps.js / cps.mock.js
+────────────────────────────────────────
+  parseCyclingPowerMeasurement(dataView) → object
+    uint16フラグ→offset2からpowerW(int16)は常に取得。以降フラグに
+    応じて pedalPowerBalancePercent(uint8×0.5), accumulatedTorqueNm
+    (uint16/32), cumulativeWheelRevolutions/lastWheelEventTime,
+    cumulativeCrankRevolutions/lastCrankEventTime, maxForceMagnitudeN/
+    minForceMagnitudeN, maxTorqueMagnitudeNm/minTorqueMagnitudeNm
+    (int16/32), maximumAngle/minimumAngle(uint24を12bitずつ分解),
+    topDeadSpotAngle/bottomDeadSpotAngle(uint16), accumulatedEnergyKj
+    (uint16)。byteLength<4で例外。
+
+  class CpsClient: connect/connectToDevice/disconnect,
+    onPowerData(cb), onConnectionStateChange(cb), get isConnected。
+    通知ごとにparseCyclingPowerMeasurementし、cumulativeCrankRevolutions/
+    lastCrankEventTimeを ble/cadence.js の createCadenceCalculator()に
+    渡してcadenceRpmを導出、{powerW, cadenceRpm, pedalPowerBalancePercent}
+    をコールバックに渡す。Control Point（書き込み）は非対応（受信専用）。
+
+  cps.mock.js: MockCpsClient — 300ms後に100ms間隔で
+    powerW=round(200+30sin(0.7t)+ノイズ±5), cadenceRpm=85+10sin(0.4t)。
+
+────────────────────────────────────────
+6-4. hrs.js / hrs.mock.js
+────────────────────────────────────────
+  parseHeartRateMeasurement(dataView) → object
+    uint8フラグのbit0x01でheartRateBpmをuint16 or uint8として読む。
+    bit0x08でenergyExpendedKj(uint16)、bit0x10でrrIntervals配列
+    (uint16/1024秒、残りバイトを2バイトずつ消費)。byteLength<2で例外。
+
+  class HrsClient: connect/connectToDevice/disconnect,
+    onHeartRateData(cb), onConnectionStateChange(cb), get isConnected。
+    書き込み・制御機能なし。
+
+  hrs.mock.js: MockHrsClient — 300ms後、1000ms間隔（他の2つより低頻度）で
+    heartRateBpm=round(140+15sin(0.2t))。
+
+────────────────────────────────────────
+6-5. cadence.js
+────────────────────────────────────────
+  createCadenceCalculator({staleTimeoutMs=2000}={}) →
+    (revolutions, eventTime) => cadenceRpm
+
+  CPSのクランク累積回転数・イベント時刻（1/1024秒単位、64秒で
+  ラップアラウンド）から差分を取り、
+    cadenceRpm = deltaRevolutions × 60 × 1024 / deltaEventTime
+  で算出するクロージャ。差分イベントが無い場合は直近値を保持しつつ、
+  staleTimeoutMs（既定2000ms）以上更新が無ければ0を返す
+  （停止検出）。uint16ラップアラウンドは `(cur-prev+0x10000)&0xFFFF` で
+  安全に処理する。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. ドメインロジック（src/domain/）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+────────────────────────────────────────
+7-1. gpxParser.js
+────────────────────────────────────────
+  haversineM(lat1, lon1, lat2, lon2) → number(m)
+    標準Haversine公式。浮動小数誤差対策でaを[0,...)にクランプ。
+
+  parseGpx(gpxText) → {name, rawPoints, wpts}
+    DOMParserで'text/xml'パース、parsererror時は例外
+    （メッセージ先頭200文字を含む）。
+    GPX 1.1名前空間で要素取得を試み、取得数が少なければ無名前空間
+    フォールバック（getEls内部ヘルパー）。
+    name: <metadata><name> → <trk><name> → 'ルート'の順でフォールバック。
+    trkpt: 文書内の全<trkpt>を走査。lat/lon不正はスキップ、緯度経度
+    小数点6桁一致の連続重複点は除去。<ele>欠損/NaNはelevationM: null。
+    有効点2点未満は例外（「有効なトラックポイントが不足しています」）。
+    wpt: lat/lon有効かつ<name>非空のもののみ{lat,lon,name}として抽出
+    （標高は取得しない）。
+
+────────────────────────────────────────
+7-2. route.js
+────────────────────────────────────────
+  calculateGradients(points, windowM=30) → points[]（gradientPercent付与）
+    距離±windowM/2の対称窓内の有効点で最小二乗回帰の傾き×100。
+    窓内2点未満時は前後の最近傍有効点間の単純傾斜にフォールバック。
+
+  smoothElevations(points, windowM) → points[]（elevationM平滑化）
+    同様の回帰窓アプローチで、回帰直線上の値に置換
+    （移動平均よりルート端・一定勾配区間の保持性が高いとされる手法）。
+
+  class Route:
+    static #ELEVATION_SMOOTHING_WINDOW_M = 300, #BUCKET_M = 50
+
+    static fromGpx(gpxText, {windowM=30, reversed=false}={}) → Route
+      parseGpx → (reversedならrawPoints反転) → 累積Haversine距離付与 →
+      smoothElevations(300m窓) → calculateGradients(windowM窓) →
+      ウェイポイントは名前が「」で囲まれたもののみ採用、括弧書き除去、
+      最近傍点探索(distanceM)を付与 → new Route(name, points, waypoints)
+
+    constructor(name, points, waypoints=[])
+      #buildGradientBuckets()で50m刻みの勾配バケットを事前計算
+      （getGradientAtはこのバケットの階段状の値を返す＝安定重視）
+
+    getters: name, points, waypoints
+    get totalDistanceM() / get totalElevationGainM()
+      （連続点間の正の標高差の合計）
+    getElevationAt(distanceM) → number|null（線形補間、両端null時null）
+    getGradientAt(distanceM) → number（50mバケットの階段値、未構築時0）
+    getPositionAt(distanceM) → {lat, lon}（線形補間）
+
+────────────────────────────────────────
+7-3. physics.js
+────────────────────────────────────────
+  G_MS2 = 9.81 (m/s²)　　RHO_KGM3 = 1.225 (kg/m³)
+  DEFAULT_PHYSICS = { massKg: 80, cdA: 0.32, crr: 0.005 }
+
+  altitudeFactor(elevM) → number
+    max(0, 1 - max(0, elevM-1500) * 0.0001)
+    （1500m以下は1.0、以降100mごとに約1%低下）
+
+  stepVelocity(powerW, gradientPercent, currentVelocityMs, dtSec,
+    {massKg, cdA, crr}) → number（新しい速度 m/s）
+    theta = atan(gradientPercent/100)
+    vEff  = max(currentVelocityMs, 0.5)  // 発進時のゼロ割回避
+    pRolling  = crr·massKg·G_MS2·cos(theta)·vEff
+    pAir      = 0.5·RHO_KGM3·cdA·vEff³
+    pGravity  = massKg·G_MS2·sin(theta)·vEff
+    accel = (powerW - pRolling - pAir - pGravity) / (massKg·vEff)
+    return max(0, currentVelocityMs + accel·dtSec)
+
+────────────────────────────────────────
+7-4. torque.js
+────────────────────────────────────────
+  calcTorque(powerW, cadenceRpm) → number|null
+    T[N·m] = P[W] × 60 / (2π × cadence[rpm])
+    cadenceRpm<20 または powerW<=0 のとき null
+    （近似が不安定になる領域のガード）
+
+────────────────────────────────────────
+7-5. simulator.js
+────────────────────────────────────────
+  class RideSimulator（route.jsとphysics.jsの橋渡し。タイマー・BLE・
+  UIには関与しない純粋シミュレーション。tickループの主導権は
+  ride/rideController.jsが持つ）
+
+    constructor(route: Route, params)
+    set altitudeEffectEnabled(bool)
+    tick(powerW, dtSec)
+      gradient = route.getGradientAt(s.distanceM)
+      elevM    = route.getElevationAt(s.distanceM) ?? 0
+      factor   = altitudeEffectEnabled ? altitudeFactor(elevM) : 1
+      effectivePowerW = powerW × factor   ← 高度によるパワー低下は
+                                             ここで速度計算に反映される
+      newV = stepVelocity(effectivePowerW, gradient, s.velocityMs,
+                           dtSec, params)
+      s.distanceM = min(prevDist + newV×dtSec, route.totalDistanceM)
+      elevationGainM は正の標高差のみ加算
+    getState() → {distanceM, velocityMs, elapsedSec, elevationGainM,
+      altitudeFactor, currentLat, currentLon, currentGradientPercent,
+      headingDeg}
+      headingDeg: 最大10m先読みしatan2(Δlon, Δlat)×180/π（真北基準
+      時計回り）で算出、残距離僅少時は0
+    get isFinished() → distanceM >= route.totalDistanceM
+    getSimState() / restoreSimState({...}) → チェックポイント保存・復元
+      （restoreSimStateは自動的にpause状態にする。再開は呼び出し元が
+      明示的にresume()する）
+    pause() / resume() / reset()
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. ライド制御（src/ride/rideController.js）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  定数: TICK_MS=100（10Hz）, SAMPLE_INTERVAL_MS=1000（1Hz記録）,
+    AIR_DENSITY_KG_M3=1.225
+
+  class RideController
+
+  コンストラクタオプション:
+    route(必須), routeId=null, routeName='',
+    params(必須, {massKg,cdA,crr}), mapView(必須), hudView(必須),
+    getLiveData(必須, ()=>{powerW,cadenceRpm,heartRateBpm}),
+    ftmsClient=null, eleView=null, onFinished=null,
+    smoothingWindowSec=3, gradientUpdateIntervalMs=1000,
+    trainerDifficulty=0.5, altitudeEffectEnabled=true,
+    mapillaryLookahead=null, mapillaryTracker=null
+
+  内部でRideSimulatorを構築。hudView.setRoute(route)をコンストラクタで
+  呼ぶ。ftmsClient指定時、windResistanceCoef = 0.5×AIR_DENSITY_KG_M3×cdA
+  を事前計算。
+
+  公開メソッド:
+    start() / pause() / resume()
+    stop() → {routeId, routeName, startedAt, endedAt, samples} | null
+      （samples.length>=2の場合のみ非null）。FTMSはisControllableなら
+      reset()を試みる（エラーは握りつぶしログのみ）。
+    get isRunning / get isPaused
+    getCheckpoint() → null|{routeId, routeName, startedAt(epoch ms),
+      samples, simState}
+    restoreFrom({startedAt, samples, simState}) →
+      チェックポイントから復元。#pausedをtrueにしてintervalを開始
+      （明示的なresume()呼び出しで走行再開）
+
+  #tick()（100ms毎）の処理順序:
+    1. dtSec = min((now-lastTick)/1000, 0.5)  // タブバックグラウンド対策
+    2. getLiveData()取得 → MovingAverageで平滑化 →
+       torqueNm = calcTorque(smoothPowerW, smoothCadence)
+    3. simulator.tick(smoothPowerW, dtSec)
+    4. state取得、effectivePowerW = smoothPowerW × state.altitudeFactor
+    5. mapView.setCurrentPosition/setProgress、eleView?.update(distanceM)
+    6. hudView.update({...})  ※10-3節の要素ID対応表を参照
+    7. 1秒毎サンプリングループ（オーバーシュート分を距離で逆補間）:
+       {timestampMs, lat, lon, elevationM, distanceM, velocityMs,
+        gradientPercent, powerW: effectivePowerW, cadenceRpm,
+        heartRateBpm}
+    8. Mapillary: tracker.update(distanceM)→activeIdx、
+       lookahead.tick(activeIdx)（非同期・fire-and-forget）、
+       lookahead.getStateFor(activeIdx)をupdatePhotoPanelへ
+    9. FTMS勾配送信: isControllableなら
+       gradientUpdateIntervalMs毎、または前回比±1.0pt以上変化時に
+       即時 setSimulationParameters({windSpeedMs:0,
+       gradientPercent: grad×trainerDifficulty, crr, windResistanceCoef})
+    10. isFinished時: hudView.showFinished() → summary=stop() →
+        onFinished?.(summary)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. ワークアウト制御
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+────────────────────────────────────────
+9-1. zwoParser.js
+────────────────────────────────────────
+  parseZwo(xmlText) → {name, segments}
+    <workout>直下の子要素をタグ名でディスパッチ:
+      SteadyState → {type:'steady', durationS, powerLowFtp,
+        powerHighFtp(=同値), cadenceRpm}
+      Warmup/Cooldown → parseRamp（同一実装、方向はPowerLow/PowerHigh
+        の値関係のみで決まる）→ {type:'ramp', durationS, powerLowFtp,
+        powerHighFtp, cadenceRpm}
+      IntervalsT → Repeat回、on区間・off区間のsteadyセグメントに展開
+      FreeRide → {type:'free', durationS, powerLowFtp:0, powerHighFtp:0,
+        cadenceRpm}
+      その他（TextEvent等）は無視
+    属性読み取りはattr(el, 'Name','name')のように大小文字両対応。
+
+  totalDurationS(segments) → 合計秒数
+  ftpColor(ftpRatio) → 色コード（<0.60灰, <0.75青, <0.90緑, <1.05黄,
+    <1.18橙, それ以上赤）
+
+────────────────────────────────────────
+9-2. workoutController.js
+────────────────────────────────────────
+  定数: TICK_MS=100, SAMPLE_INTERVAL_MS=1000, ERG_UPDATE_MS=1000,
+    ERG_THRESHOLD_W=5, AUTO_PAUSE_ZERO_CNT=10, AUTO_RESUME_HIGH_CNT=10,
+    AUTO_RESUME_POWER_W=10
+
+  locateSegment(segments, elapsedS) → {idx, t}（区間内進行率0〜1）
+  calcTargetW(seg, t, ftpW) → number|null
+    steady: round(powerLowFtp×ftpW)
+    ramp:   線形補間 (powerLowFtp+(powerHighFtp-powerLowFtp)×t)×ftpW
+    free:   null（ERGモード解除の合図）
+
+  class WorkoutController（route/mapView/hudView非依存。距離・速度は
+  勾配0固定でphysics.stepVelocityを流用した簡易参考値扱い）
+
+  コンストラクタ: segments(必須), ftpW(必須), getLiveData(必須),
+    ftmsClient=null, onStateUpdate=null, onFinished=null,
+    onAutoPause=null, onAutoResume=null, smoothingWindowSec=3,
+    params=null(既定DEFAULT_PHYSICS)
+
+  start() → #ergPrepare()（FTMS reset→requestControlで前状態をクリア）
+    →interval開始
+  pause() → 手動一時停止。#resetErg()（FTMSへreset送信）
+  resume() → #ergPrepare()再実行
+  resumeFromAutoPause() → onAutoResume発火
+  setFtpW(ftpW) → 実行中でも目標パワー計算に即反映
+  stop() → {startedAt, endedAt, samples}|null
+
+  #tick()（100ms毎）:
+    1. dtSec上限0.5s
+    2. 平滑化パワー/ケイデンス取得
+    3. 停止中でなければelapsedMs加算、stepVelocity(gradient=0)で
+       distanceM/velocityMs更新（参考値）
+    4. 生パワーでゼロ/高パワー連続カウント更新
+    5. #checkAutoPause()：自動一時停止/再開判定（5-5節ロジック）
+    6. locateSegment→calcTargetWでtargetPowerW算出
+    7. FTMS制御可能ならtargetPowerWをsetTargetPower（ERGモード、
+       ERG_UPDATE_MS毎または変化量≥ERG_THRESHOLD_Wで即時送信）。
+       target=null（FreeRide）時は#resetErg()
+    8. onStateUpdate毎tick発火（10Hz）
+    9. 非停止中のみ1Hzサンプル記録: {timestampMs, powerW, cadenceRpm,
+       heartRateBpm, distanceM, velocityMs}（位置・標高・勾配は含まない）
+    10. 完了判定でstop()+onFinished
+
+  既知の実装メモ: #checkAutoPause() 内で手動一時停止からの自動解除
+  判定に参照している `now` 変数のスコープが実装上わかりにくい箇所が
+  ある。将来リファクタ時に要確認（動作自体は現状の手動テストで
+  問題は出ていない）。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. UI実装（src/ui/, index.html）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+────────────────────────────────────────
+10-1. index.html 全体構造
+────────────────────────────────────────
+  単一HTMLファイル。<style>を<head>内に直書き（CSSファイル分割なし）。
+  4つの.tab-content（#tab-device, #tab-route, #tab-workout,
+  #tab-history）をdisplay切替、各種.modal-overlayをposition:fixedで
+  オーバーレイ表示する。
+
+────────────────────────────────────────
+10-2. Routeタブのライド中レイアウト
+────────────────────────────────────────
+  #route-main（flex row）
+    #route-side-panel（事前ライドのみ表示、ライド中は要素ごとhidden）
+      └ #pre-ride-panel（ルート一覧・標高プレビュー・開始ボタン）
+    #map-container
+      既定（事前ライド時）: flex-direction: column
+        #ele-view（flex:3、3Dマップ、Three.jsのcanvasを内包）
+        #map-side（flex:2、flex-direction: row）
+          .mapillary-panel（flex:1）/ #map-inner（flex:1）
+      .is-riding クラス付与時（ライド中のみ、main.jsのsetRidingStateで
+      #map-containerに動的付与）: flex-direction: row に切替
+        #ele-view: flex:2
+        #map-side: flex:1、flex-direction: column に切替
+          （mapillary-panel上半分／map-inner下半分）
+      ※ 事前ライド画面のレイアウトを崩さないために、行/列の切替は
+        .is-ridingクラスの有無で明確に分岐させている
+        （どちらのCSSルールも同じ#ele-view/#map-side要素に対する
+        上書きとして定義）
+
+  #hud-panel（#ele-view内、position:absolute; inset:0; pointer-events:
+    none。ライド中のみhidden解除）
+    #rhud-top（.rhud-glass、position:absolute、上部中央）
+      .row-major（パワー/ケイデンス/心拍、大きめ）
+      .row-minor（速度/トルク、小さめ、中央揃え）
+    #rhud-left（.rhud-glass、左上、累積系: 経過時間/距離/累積標高）
+    #rhud-right（.rhud-glass、右上、ルート情報: 勾配バッジ/標高）
+    #rhud-gradient-wrap（.rhud-glass、左下、#gradient-profile SVGを内包）
+    #hud-finish-msg（ゴール表示。position:absolute; top:66px;
+      left:50%; transform:translateX(-50%) で#rhud-topの直下中央に配置）
+
+  .rhud-glass 共通スタイル: 半透明背景グラデーション＋backdrop-filter:
+    blur(10px) saturate(140%)、枠線rgba(255,255,255,0.09)、角丸14px。
+    系統ごとにアクセント色の縁取り線（上部=#38bdf8、左=#64b5f6、
+    右=#ffb454）。
+
+  #course-elevation-map（#route-main の外、フル幅の帯。ライド中のみ
+    display:block）
+
+  実装上の注意: HUDの各値要素（#hud-speed, #hud-power 等）のIDは、
+  DOM上の配置（グループ分け）を変更しても hud.js からは
+  getElementById経由でしか参照されないため、レイアウト変更単体では
+  hud.js側の変更は不要（実際に本改修でもhud.js本体はロジック変更
+  最小限で済んだ）。
+
+  #hud-panelがdisplay:none→表示に切り替わる際、内部の
+  #course-elevation-map/#gradient-profile SVGはビューポートに
+  visibleになった時点で初回描画される（hud.js側でcourseReadyフラグに
+  より初回のみ構築）。
+
+────────────────────────────────────────
+10-3. HUD要素ID対応表（src/ui/hud.js）
+────────────────────────────────────────
+  データ                    要素ID                  表示位置
+  ────────────────────────  ──────────────────────  ────────────────────
+  速度                      #hud-speed               中央上部・下段
+  距離                      #hud-distance            左パネル
+  残り距離                  #hud-remaining           左パネル(サブ)
+  経過時間                  #hud-time                左パネル
+  累積標高                  #hud-elev                左パネル
+  標高                      #hud-altitude            右パネル
+  パワー                    #hud-power               中央上部・上段
+  パワー低下率              #hud-power-penalty       中央上部(補助)
+  ケイデンス                #hud-cadence             中央上部・上段
+  トルク                    #hud-torque              中央上部・下段
+  心拍                      #hud-hr                  中央上部・上段
+  勾配                      #hud-gradient            右パネル(バッジ内)
+  勾配バッジの色付け対象     #hud-gradient-badge      右パネル
+  直近1km勾配プロファイル    #gradient-profile        左カラム下部
+  コース全体標高             #course-elevation-map    画面最下部
+  3Dマップ                  #ele-view                左カラム全体
+  風景写真                  .mapillary-panel         右カラム上半分
+  2Dマップ                  #map-inner               右カラム下半分
+
+  class HUDView（hud.js）:
+    setRoute(route)  ルート確定時。初回update()呼び出し時に
+      #renderCourseElevation()を実行（SVGがvisibleになってから描画）
+    update({velocityMs, distanceM, totalDistanceM, elapsedSec,
+      elevationGainM, powerW, altitudeFactor=1, cadenceRpm, torqueNm,
+      heartRateBpm, gradientPercent, altitudeM}) 毎tick呼び出し。
+      各#hud-*要素のtextContentを更新するほか、
+      #hud-gradient-badgeの背景色・文字色を勾配カラールール
+      （下記gradientColor()）で動的に設定する
+      （hexToRgba()で背景は不透明度0.18のrgbaに変換）
+    showFinished() → #hud-finish-msgのhidden解除
+    #renderGradientProfile(currentDistanceM) → 直近1km分をSVG動的生成
+      （500m/1kmラベル、勾配で色分けしたポリゴン、現在地マーカー）
+    #renderCourseElevation() → ルート全体を200点サンプルしSVG生成
+      （10分割の距離ラベル、現在位置マーカー用のline要素を仕込む）
+    #updateCourseMarker(distanceM) → 上記マーカーのx座標のみ更新
+
+    gradientColor(pct)（モジュール内関数、3Dマップeleview.jsの
+      roadColor()と同一しきい値・同一配色を共有する設計）:
+        <3% #2ed573（緑）, <6% #ffd32a（黄）, <9% #ee7800（橙）,
+        <12% #ff0000（赤）, それ以上 #4C2E30（濃赤茶）
+
+────────────────────────────────────────
+10-4. eleView.js（3Dマップ、Three.js）
+────────────────────────────────────────
+  class EleView(containerEl)
+    コンストラクタでcontainerEl.style.position='relative'、canvas生成、
+    WebGLRenderer(alpha:true, 背景透過でCSS側の空色を活かす)、
+    PerspectiveCamera(fov50)、Fog(FOG_NEAR=200〜FOG_FAR=800m)、
+    ResizeObserverでリサイズ追従。
+    setRoute(route) → ルート点群から道路リボン・壁・センターライン・
+      エッジのメッシュを再構築、1kmごとの距離看板・ウェイポイント看板
+      （makeSignSprite、Canvas texture）を配置
+    update(distanceM) → 看板の表示/非表示切替のみ（カメラ位置は
+      内部のrequestAnimationFrameループで目標distMへLERP追従）
+    道路色は勾配によりroadColor()で決定（10-3節と同一しきい値）
+    ROAD_HALF_W=8.0m, Y_EXAG=2.5（標高の視覚的誇張）,
+      CAM_HEIGHT=Y_EXAG×3.0, LOOK_AHEAD=5m, AHEAD_M=800/BEHIND_M=30
+      （距離ウィンドウ外はdrawRangeで描画スキップ、パフォーマンス対策）
+
+────────────────────────────────────────
+10-5. map.js（2Dマップ、Leaflet）
+────────────────────────────────────────
+  class MapView（別名 export { MapView as LeafletMapView }）
+    constructor(containerEl) → LeafletマップにOSMタイルレイヤーを追加、
+      ユーザーdragstartで自動追従を解除、ResizeObserverでinvalidateSize
+    setRoute(route) → 既存レイヤーをクリアし、ルート全体を青
+      ポリライン（#4488ff, weight4）で描画、fitBoundsでズーム調整
+    setCurrentPosition(lat, lon, headingDeg) → 矢印divIconマーカーを
+      移動・回転、followMode時は地図をpan
+    setProgress(distanceM) → 走行済み区間を緑ポリライン（#4caf50）で
+      route.getPositionAt(distanceM)まで描画
+    recenter() → followMode再有効化＋現在地に再センター（ズーム15以上）
+    invalidateSize() / destroy()
+
+  googleMapView.js（オーナーモード時の代替、mapFactory.jsで選択）:
+    class GoogleMapView(containerEl) — containerEl内にStreetView用div
+      (flex:45)とMap用div(flex:55)を縦に自前生成。位置更新の都度、
+      一定の移動距離・勾配差・方位差・時間間隔の条件を満たした時のみ
+      Street View画像を再取得する間引きロジックを持つ
+      （STREETVIEW_MIN_DIST_M=100, MIN_GRADIENT_DIFF=2,
+      MIN_HEADING_DIFF=20, MIN_INTERVAL_MS=3000）。
+
+  mapFactory.js: createMapView(osmContainerEl, googleContainerEl)
+    settings.mapProviderが'google'かつisOwnerMode()の時のみ
+    GoogleMapView、それ以外はMapView(osm)を返す。
+
+────────────────────────────────────────
+10-6. deviceManager.js
+────────────────────────────────────────
+  initDeviceManager({getFtpW}) → {getLiveData, ftmsClient, isDummyTrainer}
+  URLの?mockクエリでBLEクライアントをモック実装に総入れ替え。
+  wireCard(client, cardId, deviceName, dbKey)でカード×3を共通配線。
+  powerSource設定に応じて、FTMS/CPSのどちらのデータをlive共有オブジェクト
+  へ反映するか分岐（心拍は常にHRSの値を採用）。
+  ダミートレーナー有効時は getLiveData() が
+  {powerW: getFtpW(), cadenceRpm: 90, heartRateBpm: live.heartRateBpm}
+  を返す。
+
+────────────────────────────────────────
+10-7. routePicker.js
+────────────────────────────────────────
+  initRoutePicker(mapView, {onRouteSelected}) で配線。
+  ローカル/リモート双方の読み込み後、ルート名確認モーダル
+  （#route-name-overlay）を経てsaveRoute()。
+  一覧描画・選択・逆走チェック・削除を担当。選択時に
+  Route.fromGpx(gpxText, {reversed}) → mapView.setRoute(route) →
+  標高プロファイルSVG描画 → onRouteSelected({route, id, name, reversed})
+  を呼ぶ（Mapillaryの事前計算はmain.js側のコールバックで実施）。
+
+────────────────────────────────────────
+10-8. rideEndModal.js / rideHistory.js
+────────────────────────────────────────
+  class RideEndModal({onClose})
+    show(summary) → 既定名生成、Strava接続状況に応じてアップロード
+      ボタンの有効/無効・ラベルを切替、モーダル表示
+    アップロード成功時は2秒後に自動クローズ、失敗時はローカル保存済み
+      である旨のエラーメッセージを表示したまま開いておく
+
+  renderRideHistory() → #ride-history-listへ一覧描画。各行に
+    アップロード/FIT/削除ボタン。reupload()はStrava未接続ならalert、
+    接続済みならFIT再生成してuploadToStrava→markUploaded/Failed。
+
+────────────────────────────────────────
+10-9. workoutTab.js
+────────────────────────────────────────
+  initWorkoutTab({getLiveData, ftmsClient, getFtpW, isDummyTrainer,
+    getPhysicsParams, onWorkoutEnd})
+  ZWO読み込み→parseZwo→saveWorkout→一覧再描画、という流れは
+  routePicker.jsのGPX版と対称的な設計。
+  launchController()でWorkoutControllerを構築・start()。
+  localStorage（SESSION_KEY='workout-session'）でページリロード
+  またぎの再開に対応（restoreFrom）。
+  FTP微調整ボタンはcontroller.setFtpW()を都度呼び、区間ラベル・色
+  （ftpColor）を再計算する。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. 実写風景写真（src/mapillary/）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  api.js:
+    fetchCandidateImages(point) — {lat,lon}中心に半幅35m
+      （bboxFromPoint）のbboxでGraph API `/images` をGET
+      （fields: id, compass_angle, computed_compass_angle, is_pano,
+      sequence_id, quality_score, captured_at, thumb_1024_url, creator。
+      limit=40）。トークンはVITE_MAPILLARY_TOKEN。
+    fetchThumbUrl(imageId) — サムネイルURLは長期キャッシュ不可のため、
+      表示直前に単体エンティティを再取得して新鮮なURLを得る。
+
+  bearing.js:
+    precomputeBearings(points, window=2) — 各点に前後window点を使った
+      大圏方位角(bearing)を付与。逆走時は反転済みpoint配列に対して
+      呼ぶこと。
+
+  score.js:
+    effectiveAngle(image) — computed_compass_angle優先、なければ
+      compass_angle。
+    selectBest(images, routeBearing, activeSequenceId=null) —
+      角度差>45°は除外(score=-1)。パノラマは
+      `35 - diff×0.2 + quality×20 + recency`、通常写真は
+      `50 - diff×0.3 + quality×20 + recency` を基礎スコアとし、
+      activeSequenceId一致で+15（SEQUENCE_BONUS、直前と同じ撮影
+      シーケンスの継続を優先）。最高スコアの1件を返す（無ければnull）。
+
+  cache.js:
+    IndexedDB `mapillaryCache` ストア(KV)。CACHE_VERSION=7,
+    STALE_MS=90日。
+    resolveImageForPoint(cachePrefix, idx, point, activeSequenceId) —
+      キー `${cachePrefix}::${idx}`。有効キャッシュがあれば
+      サムネイルURLのみ再取得して返す（stripUrl）。無ければ
+      fetchCandidateImages+selectBestを実行しキャッシュへ保存。
+
+  lookahead.js:
+    class ActiveIndexTracker(points) — update(currentDistanceM)で、
+      次点のdistanceFromStartM-25mを現在距離が超えたら単調に
+      activeIndexを進める（25m手前倒しトリガー）。
+    class MapillaryLookahead(cachePrefix, points, lookaheadPoints=6) —
+      Map<index,{status,image,routeBearing}>のバッファを持ち、
+      tick(activeIndex)でactiveIndex+lookaheadPoints
+      （既定6点≈想定50m間隔で約300m先）まで1件ずつ先読み取得
+      （#inFlightで同時1件に制限）。activeIndex-1より古いバッファは
+      破棄。#activeSequenceIdを跨ぎ保持し継続性ボーナスへ利用。
+      getStateFor(index) → 未取得時は{status:'pending', image:null,
+      routeBearing:null}。
+
+  panel.js:
+    updatePhotoPanel(status, image, routeBearing=null, distanceM=null)
+      — status==='pending'は無視（チラつき防止）。画像なしは
+      "No Image"。表示直前の再チェックとしてDISPLAY_MAX_DIFF_DEG=25
+      （キャッシュ選定時の45°より厳しい）を超えたら"No Image"に
+      フォールバック。パノラマはtransform-origin＋2倍ズームで
+      routeBearing方向を画面中央にクロップ。撮影者クレジット
+      「© {username} / Mapillary」を表示。
+    resetPhotoPanel() — プレースホルダーに戻す。
+
+  end-to-end フロー（main.jsのonRouteSelectedコールバック～
+  rideController.js #tick、両者にまたがる）:
+    ルート選択時: MAPILLARY_ENABLED（VITE_MAPILLARY_TOKEN有無）が
+      trueなら precomputeBearings(route.points) を1回実行、
+      cachePrefix = `${routeId}:${reversed?'r':'f'}` で
+      MapillaryLookahead/ActiveIndexTrackerを構築、初回
+      lookahead.tick(0) で1枚目をプレビュー。
+    ライド中: rideController.js #tick 内で
+      tracker.update(distanceM)→activeIdx、
+      lookahead.tick(activeIdx)（非同期）、
+      lookahead.getStateFor(activeIdx) を updatePhotoPanel に渡す。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. FIT生成（src/export/fitWriter.js）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+外部FITライブラリを使わず、バイナリを直接組み立てる自前実装。
+
+  FIT_EPOCH_MS = Date.UTC(1989,11,31)
+  グローバルメッセージ番号: FILE_ID=0, ACTIVITY=34, SESSION=18,
+    LAP=19, RECORD=20
+  ベース型: ENUM=0x00, UINT8=0x02, UINT16=0x84, SINT32=0x85,
+    UINT32=0x86
+
+  class ByteWriter（非export）— u8/u16/u32/s32のリトルエンディアン
+    書き込みヘルパー、.bytesでUint8Array取得
+  fitCrc(bytes) — FIT標準のCRC-16（nibbleテーブル方式）
+  writeDef(w, localType, globalNum, fields) — FIT定義メッセージ書き込み
+  fitTs(ms) → FITタイムスタンプ（FIT epoch起点の秒）
+  semicircles(deg) → round(deg × 2^31/180)（緯度経度のFIT表現）
+  altRaw(m) → round((m+500)×5)、[0,0xFFFE]でクランプ、null時0xFFFF(invalid)
+  avg(arr, fn) → fn(x)>0の要素のみで平均
+
+  buildFit(summary) → Uint8Array（GPS付きルートライド用）
+    summary: {routeName, startedAt, endedAt, samples:[{timestampMs,
+      lat, lon, elevationM, distanceM, velocityMs, powerW, cadenceRpm,
+      heartRateBpm}]}
+    メッセージ順: FileID → Record(サンプル毎、緯度経度はsemicircles、
+      標高はaltRaw、距離は×100、速度は×1000) → Lap
+      （event=9/event_type=1固定値、total_elapsed_timeはミリ秒を
+      そのままuint32格納 = FIT仕様上のスケール1000秒フィールドと
+      解釈上整合） → Session（sport=2/サイクリング,
+      sub_sport=58/バーチャル活動、平均値、total_ascent=calcAscent()）
+      → Activity（event=26/event_type=1）
+    ヘッダー14バイト + データ + データ部CRC(2バイトLE) で構成
+    （buildHeader()）。routeNameは文字列としては書き込まれない
+    （呼び出し元がStravaアップロード時の名前として別途使用）。
+
+  buildWorkoutFit(summary) → Uint8Array（GPS無し、ワークアウト用。
+    Stravaへtrainer=1でアップロードする想定）
+    summary: {workoutName, startedAt, endedAt, samples:[{timestampMs,
+      powerW, cadenceRpm, heartRateBpm, distanceM?, velocityMs?}]}
+    Recordから緯度経度・標高を除外、Session.sub_sport=6
+    （インドアサイクリング）、total_ascentフィールドなし。それ以外は
+    buildFit()と同じメッセージ構成。
+
+  buildHeader(dataSize) — サイズ14, protocol=0x20, profile version=2132,
+    データサイズ(u32 LE), ".FIT"マジック, 先頭12バイトのCRC(u16 LE)
+  calcAscent(samples) — 連続サンプル間の正の標高差の合計
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+13. Strava連携の実装
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+────────────────────────────────────────
+13-1. src/strava/auth.js（クライアント側）
+────────────────────────────────────────
+  startAuthorization() — `https://www.strava.com/oauth/authorize` へ
+    window.location.href でリダイレクト。パラメータ:
+    client_id, redirect_uri, response_type=code,
+    scope='activity:write,read', approval_prompt=auto。
+    PKCE不使用（クライアントシークレットはサーバー側関数に隠蔽する
+    標準の認可コードフロー）。
+
+  exchangeCode(code) → tokens
+    同一オリジンの `/strava-exchange`（Cloudflare Pages Function）へ
+    {code}をPOST。レスポンスから
+    {accessToken, refreshToken, expiresAt(unix秒), athleteId,
+    athleteName} を組み立て、settings.stravaTokensへ保存。
+
+  getValidAccessToken() → accessToken
+    expiresAt > now+60秒 ならキャッシュ済みトークンをそのまま返す。
+    それ以外は `/strava-refresh` へ{refresh_token}をPOSTし、
+    access_token/expires_atのみ更新して保存
+    （※ Stravaがrefresh_tokenをローテーションした場合、レスポンスの
+    新refresh_tokenを保存していない実装になっている点に注意
+    ―将来的な改善候補）。
+
+  getConnectionInfo() → {athleteName, athleteId}|null（リフレッシュなし）
+  disconnect() → settings.stravaTokens削除
+
+────────────────────────────────────────
+13-2. functions/strava-exchange.js / strava-refresh.js（サーバー側）
+────────────────────────────────────────
+  Cloudflare Pages Functions（`onRequestPost(context)`形式）。
+  env.STRAVA_CLIENT_ID / env.STRAVA_CLIENT_SECRET を使って
+  `https://www.strava.com/oauth/token` へ中継し、レスポンスJSONを
+  そのままクライアントへ返す（クライアントシークレットは
+  レスポンスに含めない、リクエストのみに使用）。
+
+────────────────────────────────────────
+13-3. src/strava/upload.js
+────────────────────────────────────────
+  POLL_INTERVAL_MS=5000, POLL_MAX_TRIES=12（最大60秒待機）
+
+  uploadToStrava(fitData, {name, trainer=false}) → activityId(string)
+    getValidAccessToken() → multipart/form-data構築
+    （file: Blob(fitData, application/octet-stream, ride.fit),
+    data_type='fit', name, sport_type='VirtualRide', commute='0',
+    trainer時のみtrainer='1'）→
+    `POST https://www.strava.com/api/v3/uploads`
+    （Authorization: Bearer <token>）→ レスポンスid_strを
+    uploadIdとしてポーリング開始。
+    checkUploadStatus(uploadId)を5秒間隔・最大12回ポーリングし、
+    activity_idが得られ次第返す。エラー応答は即座に例外、
+    全試行終了時はタイムアウト例外。
+
+────────────────────────────────────────
+13-4. オーナーモード（src/utils/ownerMode.js, functions/api/auth.js）
+────────────────────────────────────────
+  URLパラメータ `?owner=PASSCODE` を functions/api/auth.js
+  （`GET /api/auth?owner=...`）へ照会し、Cloudflare環境変数
+  OWNER_PASSCODEと一致すればsessionStorageにフラグを立てる
+  （パスコード自体はクライアントバンドルに含まれない）。
+  isOwnerMode()がtrueの間のみ、設定モーダルの地図プロバイダ選択
+  （Google Maps代替）が表示・有効化される。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+14. PWA / Service Worker
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  public/manifest.json:
+    name: "Virtual Cycling", short_name: "VCycl",
+    display: "standalone", orientation: "landscape",
+    background_color: "#1a1a2e", theme_color: "#0f3460",
+    icons: 192px/512px（purpose: any maskable）
+
+  public/sw.js:
+    CACHE_NAME = 'vcycl-v{N}'（キャッシュ更新時にNをインクリメント）
+    PRECACHE_URLS: '/', manifest.json, favicon類, icons/*
+    install: PRECACHE_URLSをキャッシュ、skipWaiting()
+    activate: 旧キャッシュ削除、clients.claim()
+    fetch: cache-first（キャッシュヒットしなければネットワーク）
+      ※ ナビゲーションリクエストのネットワーク優先化などのオフライン
+        戦略改善は将来課題としてコード内コメントに残っている
+
+  登録: index.html末尾のインラインscriptで
+    `navigator.serviceWorker.register('/sw.js')`（main.jsではなく
+    index.html側に直接記述されている点に注意）。
+
+  __APP_VERSION__: vite.config.local.js / vite.config.js で
+    package.jsonのversionを読み込みビルド時定数として注入。
+    main.jsが `#app-version` 要素に 'v' + __APP_VERSION__ を表示。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+15. Cloudflare Pages デプロイ設定
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ビルドコマンド        : npm run build
+  ビルド出力ディレクトリ : dist
+  Functions             : functions/ ディレクトリを自動検出
+    （strava-exchange, strava-refresh, api/auth）
+
+  環境変数（Production/Preview両方に設定）:
+    VITE_MAPILLARY_TOKEN, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
+    VITE_SUPABASE_BUCKET, VITE_STRAVA_CLIENT_ID,
+    VITE_STRAVA_REDIRECT_URI, VITE_GOOGLE_MAPS_API_KEY
+    （サーバー側専用）STRAVA_CLIENT_SECRET, OWNER_PASSCODE
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+16. ローカル開発手順
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. npm install
+  2. .env.local を作成し、4章のVITE_変数を記入
+  3. npm run dev
+     （vite.config.local.js。@vitejs/plugin-basic-ssl または
+     certs/local.pem・local-key.pem による自己署名HTTPSで起動）
+  4. ブラウザで https://localhost:5173 を開く
+
+  iPad（Bluefy）から同一LAN経由でアクセスする場合:
+    npm run dev:ipad （mode=https、LAN公開有効）
+    → https://<PCのIPアドレス>:5173 をBluefyで開く
+
+  デバッグ支援クエリパラメータ:
+    ?mock=1     BLEを全てモック実装に切替（3-5節）
+    ?owner=XXX  オーナーモード有効化（13-4節、地図プロバイダ切替UI等）
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+17. テスト（test/、Vitest）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  npm test で実行（vitest run）。決定論的なロジックを中心にカバー:
+    test/ble/          cadence.test.js, cps.parse.test.js,
+                        ftms.encode.test.js, ftms.parse.test.js,
+                        ftms.response.test.js, hrs.parse.test.js
+    test/domain/        gpxParser.test.js, gradient.test.js,
+                        physics.test.js, route.test.js,
+                        simulator.test.js, torque.test.js
+    test/export/         fitWriter.test.js
+    test/db.test.js      IndexedDB操作（jsdom環境）
+    test/fixtures/        flat-loop.gpx, mountain.gpx, no-elevation.gpx
+                          （テスト用GPXサンプル）
+
+  BLE実機・Web Bluetooth API・実際のStrava/Mapillary通信を要する
+  部分はテスト対象外（モック実装またはUIでの手動確認に委ねる）。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+18. .gitignore 対象（機密・生成物）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    node_modules/
+    dist/
+    .env / .env.local
+    certs/                （ローカルHTTPS用の自己署名証明書）
+
+================================================================================
+  END OF IMPLEMENT
+================================================================================
