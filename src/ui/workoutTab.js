@@ -1,4 +1,5 @@
 import { saveWorkout, listWorkouts, deleteWorkout } from '../storage/workouts.js'
+import { listRemoteZwoFiles, downloadRemoteZwo, fetchWorkoutFilesMeta } from '../storage/remoteWorkouts.js'
 import { parseZwo, totalDurationS, ftpColor } from '../workout/zwoParser.js'
 import { WorkoutController } from '../workout/workoutController.js'
 import { buildWorkoutFit } from '../export/fitWriter.js'
@@ -96,9 +97,15 @@ function segFtpForColor(seg) {
 // ── Main exported init ────────────────────────────────────────────────────────
 
 export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, isDummyTrainer = () => false, getPhysicsParams, onWorkoutEnd }) {
-  const loadBtn    = document.getElementById('load-zwo-btn')
+  const loadBtn       = document.getElementById('load-zwo-btn')
+  const loadRemoteBtn = document.getElementById('load-remote-zwo-btn')
   const fileInput  = document.getElementById('zwo-file-input')
   const zwoListEl  = document.getElementById('zwo-list')
+
+  const remoteOverlay   = document.getElementById('remote-zwo-overlay')
+  const remoteStatus    = document.getElementById('remote-zwo-status')
+  const remoteList      = document.getElementById('remote-zwo-list')
+  const remoteCancelBtn = document.getElementById('remote-zwo-cancel')
   const profileSvg = document.getElementById('workout-profile-svg')
   const startBtn   = document.getElementById('start-workout-btn')
   const prePanel   = document.getElementById('workout-pre-panel')
@@ -179,6 +186,83 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, isDummyTraine
       alert(`ZWOの読み込みに失敗しました: ${err.message}`)
     }
   })
+
+  // ── Remote ZWO load ──
+  loadRemoteBtn.addEventListener('click', () => openRemoteZwoPicker())
+
+  remoteCancelBtn.addEventListener('click', () => {
+    remoteOverlay.classList.remove('open')
+  })
+
+  remoteOverlay.addEventListener('click', (e) => {
+    if (e.target === remoteOverlay) remoteOverlay.classList.remove('open')
+  })
+
+  async function openRemoteZwoPicker() {
+    remoteList.innerHTML = ''
+    remoteStatus.textContent = '読み込み中...'
+    remoteOverlay.classList.add('open')
+
+    let files, metaMap
+    try {
+      [files, metaMap] = await Promise.all([
+        listRemoteZwoFiles(),
+        fetchWorkoutFilesMeta().catch(() => new Map()),
+      ])
+    } catch (err) {
+      remoteStatus.textContent = `取得に失敗しました: ${err.message}`
+      return
+    }
+
+    if (files.length === 0) {
+      remoteStatus.textContent = 'ZWOファイルが見つかりませんでした'
+      return
+    }
+
+    remoteStatus.textContent = `${files.length} 件`
+
+    for (const file of files) {
+      const meta = metaMap.get(file.name)
+      const fileBaseName = file.name.replace(/\.zwo$/i, '')
+      const btn = document.createElement('button')
+      btn.className = 'remote-gpx-item'
+      const metaText = meta?.durationS != null ? fmtDurS(meta.durationS) : ''
+      btn.innerHTML = `
+        <span class="remote-gpx-name">${escHtml(meta?.displayName ?? fileBaseName)}</span>
+        ${metaText ? `<span class="remote-gpx-meta">${metaText}</span>` : ''}
+      `
+      btn.addEventListener('click', () => loadRemoteZwo(file.name, meta?.displayName))
+      remoteList.appendChild(btn)
+    }
+  }
+
+  async function loadRemoteZwo(fileName, displayName) {
+    remoteStatus.textContent = `ダウンロード中: ${fileName}`
+    remoteList.querySelectorAll('button').forEach((b) => (b.disabled = true))
+
+    let text
+    try {
+      text = await downloadRemoteZwo(fileName)
+    } catch (err) {
+      remoteStatus.textContent = `ダウンロードに失敗しました: ${err.message}`
+      remoteList.querySelectorAll('button').forEach((b) => (b.disabled = false))
+      return
+    }
+
+    try {
+      const { name, segments } = parseZwo(text)
+      const fileBaseName = fileName.replace(/\.zwo$/i, '')
+      const finalName = displayName ?? ((name && name !== 'ワークアウト') ? name : fileBaseName)
+      await saveWorkout({ name: finalName, zwoText: text, totalDurationS: totalDurationS(segments) })
+      await renderList()
+    } catch (err) {
+      alert(`ZWOの読み込みに失敗しました: ${err.message}`)
+      remoteList.querySelectorAll('button').forEach((b) => (b.disabled = false))
+      return
+    }
+
+    remoteOverlay.classList.remove('open')
+  }
 
   startBtn.addEventListener('click', async () => {
     if (!selectedWorkout || !getLiveData) return

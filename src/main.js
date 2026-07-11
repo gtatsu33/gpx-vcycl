@@ -337,6 +337,7 @@ function setRidingState(riding) {
 const authGearBtn     = document.getElementById('auth-gear-btn')
 const authPopoverEl   = document.getElementById('auth-popover')
 const loadRemoteGpxBtn = document.getElementById('load-remote-gpx-btn')
+const loadRemoteZwoBtn = document.getElementById('load-remote-zwo-btn')
 
 let currentUser = null
 
@@ -371,6 +372,8 @@ function updateAuthUI() {
   authGearBtn.title = isLoggedIn ? `ログイン中: ${currentUser.email}` : 'ログイン'
   loadRemoteGpxBtn.disabled = !isLoggedIn
   loadRemoteGpxBtn.title    = isLoggedIn ? '' : '招待ユーザー限定の機能です'
+  loadRemoteZwoBtn.disabled = !isLoggedIn
+  loadRemoteZwoBtn.title    = isLoggedIn ? '' : '招待ユーザー限定の機能です'
 }
 
 function makeAuthCancelBtn() {

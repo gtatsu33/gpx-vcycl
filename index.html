@@ -429,8 +429,8 @@
       background: #0a0c10; border-top: 1px solid #2c4055;
     }
 
-    /* Remote GPX picker modal */
-    #remote-gpx-list {
+    /* Remote GPX/ZWO picker modal（同一スタイルを共用） */
+    #remote-gpx-list, #remote-zwo-list {
       display: flex; flex-direction: column; gap: 0.35rem;
       max-height: 55dvh; overflow-y: auto; min-height: 2rem;
     }
@@ -446,7 +446,7 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .remote-gpx-meta { font-size: 0.7rem; color: #6080a0; }
-    #remote-gpx-status { font-size: 0.8rem; color: #6080a0; min-height: 1.4em; }
+    #remote-gpx-status, #remote-zwo-status { font-size: 0.8rem; color: #6080a0; min-height: 1.4em; }
 
     /* Portrait fallback */
     @media (orientation: portrait) {
@@ -866,6 +866,7 @@
     <div id="workout-pre-panel">
       <div id="workout-file-controls">
         <button id="load-zwo-btn">ZWOを読み込む</button>
+        <button id="load-remote-zwo-btn" disabled title="招待ユーザー限定の機能です">ネットワークからZWOを読み込む</button>
         <input type="file" id="zwo-file-input" hidden />
       </div>
       <div id="zwo-list"></div>
@@ -1106,6 +1107,18 @@
       <div id="remote-gpx-list"></div>
       <div class="modal-buttons" style="margin-top:0.5rem;">
         <button id="remote-gpx-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remote ZWO picker modal -->
+  <div id="remote-zwo-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>ネットワークからZWOを選択</h2>
+      <p id="remote-zwo-status">読み込み中...</p>
+      <div id="remote-zwo-list"></div>
+      <div class="modal-buttons" style="margin-top:0.5rem;">
+        <button id="remote-zwo-cancel">キャンセル</button>
       </div>
     </div>
   </div>

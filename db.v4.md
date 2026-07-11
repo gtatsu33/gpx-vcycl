@@ -44,18 +44,46 @@ create table route_files (
 | `elevation_gain_m` | nullable                | 累積獲得標高 [m]。gpxconverter が GPX から計算して設定 |
 | `created_at`       | NOT NULL                | レコード作成日時                                   |
 
+### テーブル: `workout_files`
+
+Supabase Storage に格納された ZWO（Zwiftワークアウト形式）ファイルのメタデータ。
+`route_files` と同型。ファイル本体は `gpx_routes` バケットに `.gpx` と混在で
+格納する（拡張子で区別できるため、ワークアウト専用バケットは作らない）。
+
+```sql
+create table workout_files (
+  id               bigserial primary key,
+  file_key         text not null unique,  -- Storage のオブジェクトキー（拡張子含む ASCII、.zwo）
+  display_name     text not null unique,  -- 日本語可の表示名（重複不可）
+  duration_s       numeric,              -- 総時間 [秒]
+  created_at       timestamptz not null default now()
+);
+```
+
+| カラム             | 制約                    | 説明                                               |
+|--------------------|-------------------------|----------------------------------------------------|
+| `id`               | PK, serial              | 内部ID                                             |
+| `file_key`         | UNIQUE, NOT NULL        | Storage オブジェクトキー。例: `sst-4x8min.zwo`     |
+| `display_name`     | UNIQUE, NOT NULL        | UIに表示する名前。日本語可                          |
+| `duration_s`       | nullable                | 総時間 [秒]。アップロードツールがZWOから計算して設定 |
+| `created_at`       | NOT NULL                | レコード作成日時                                   |
+
 ---
 
 ## Supabase Storage
 
 バケット名: `gpx_routes`（環境変数 `VITE_SUPABASE_BUCKET` で上書き可）
 
-| 項目             | 値                                     |
-|------------------|----------------------------------------|
-| ファイル形式     | `.gpx`（XML）                          |
-| ファイルキー     | ASCII のみ（例: `fuji-hillclimb.gpx`） |
-| 日本語ファイル名 | 非対応（Supabase Storage の制限）      |
-| 表示名の管理     | `route_files.display_name` で管理      |
+GPX・ZWO両方のファイルを同一バケットに拡張子違いで混在格納する
+（`route_files`/`workout_files` の2テーブルでメタデータを分離管理するため、
+Storage側でバケットを分ける必要はない）。
+
+| 項目             | 値                                              |
+|------------------|--------------------------------------------------|
+| ファイル形式     | `.gpx`（XML）、`.zwo`（XML）                     |
+| ファイルキー     | ASCII のみ（例: `fuji-hillclimb.gpx`, `sst-4x8min.zwo`） |
+| 日本語ファイル名 | 非対応（Supabase Storage の制限）                |
+| 表示名の管理     | `route_files.display_name` / `workout_files.display_name` で管理 |
 
 ---
 
@@ -88,6 +116,49 @@ gpxconverter.py
   └─ INSERT INTO route_files (file_key, display_name, distance_m, elevation_gain_m)
         file_key 重複（UNIQUE 制約違反）→ Storage を削除してロールバック → エラーで中断
         display_name 重複（UNIQUE 制約違反）→ Storage を削除してロールバック → エラーで中断
+```
+
+---
+
+## 書き込み仕様（ZWOアップロードツール・未実装）
+
+gpxconverter.py と同様の役割を持つ別ツール（Zwiftワークアウトのダウンロード
+フォルダとSupabase側を比較し、未アップロードの `.zwo` ファイルだけを
+アップロードする想定）を今後別途作成する。仕様は `gpxconverter.py` と
+対称に、以下の通りとする。
+
+### file_key のルール
+
+- アップロードツールがエクスポート時に ASCII ファイル名を検証する
+- 非ASCII文字が含まれる場合はエラーとして処理を中断する
+
+### 重複時の挙動
+
+- 同じ `file_key` で Storage（`gpx_routes`バケット）へのアップロードまたは
+  `workout_files` への INSERT を試みた場合はエラーとする
+- 同じ `display_name` で `workout_files` への INSERT を試みた場合もエラーとする
+- UPSERT（上書き）は行わない
+- `file_key` / `display_name` の UNIQUE 制約違反は呼び出し元でハンドリングする
+- 既にクラウド側に存在する `file_key` はスキップする（差分アップロードの本旨）
+
+### INSERT 時の想定フロー
+
+```
+ZWOアップロードツール
+  │
+  ├─ ローカルのZwiftワークアウトフォルダを走査
+  │
+  ├─ Storage.list()（gpx_routesバケット）で既存file_key一覧を取得し、
+  │     ローカルに存在してクラウドに無いファイルだけを対象に絞る
+  │
+  ├─ ZWOファイルをパースし duration_s を計算、file_keyがASCIIであることを確認
+  │
+  ├─ Storage.upload(file_key, zwo_bytes)  ※ gpx_routesバケットへ（.gpxと混在）
+  │     重複 → エラーで中断（またはスキップ）
+  │
+  └─ INSERT INTO workout_files (file_key, display_name, duration_s)
+        file_key重複（UNIQUE制約違反）→ Storageを削除してロールバック → エラーで中断
+        display_name重複（UNIQUE制約違反）→ Storageを削除してロールバック → エラーで中断
 ```
 
 ---
@@ -135,6 +206,29 @@ openRemotePicker()
 
 ---
 
+## 読み取りフロー（gpx-vcycl、ワークアウト）
+
+`route_files` と対称の読み取り専用フロー。gpx-vcyclはワークアウトの
+アップロード機能を持たない（書き込みは別ツールが担当）。
+
+```
+openRemoteZwoPicker()
+  │
+  ├─ Storage.list()（gpx_routesバケット、.zwoのみフィルタ）
+  │     file_key 一覧を取得
+  │
+  ├─ SELECT * FROM workout_files   表示名・総時間を取得
+  │     → Map<file_key, {display_name, duration_s}>
+  │
+  └─ 表示
+       display_name があれば使用、なければ file_key（拡張子除去）をフォールバック
+       duration_s があればサブテキストに表示
+```
+
+2回のAPIコールで完結。ZWOファイル本体のダウンロードは選択後のみ。
+
+---
+
 ## Supabase セットアップ手順
 
 1. [Supabase ダッシュボード](https://supabase.com/dashboard) を開き、対象プロジェクトを選択
@@ -152,9 +246,23 @@ create table route_files (
 );
 
 alter table route_files enable row level security;
+
+create table workout_files (
+  id               bigserial primary key,
+  file_key         text not null unique,
+  display_name     text not null unique,
+  duration_s       numeric,
+  created_at       timestamptz not null default now()
+);
+
+alter table workout_files enable row level security;
 ```
 
-4. 左メニュー → **Table Editor** で `route_files` テーブルが表示されれば完了
+4. 左メニュー → **Table Editor** で `route_files`・`workout_files` テーブルが
+   表示されれば完了
+5. 各テーブルにRLSポリシー（authenticatedロールのみSELECT許可）を設定する
+   （設定方法はSupabaseダッシュボードの認証設定に準ずる。db.v4.md本書には
+   ポリシーSQLの詳細は含めない）
 
 ---
 
