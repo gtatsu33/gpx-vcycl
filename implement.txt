@@ -1120,13 +1120,23 @@ constants.js に集約する。
     icons: 192px/512px（purpose: any maskable）
 
   public/sw.js:
-    CACHE_NAME = 'vcycl-v{N}'（キャッシュ更新時にNをインクリメント）
+    CACHE_NAME = 'vcycl-v{N}'（sw.js自体の内容を変更するたびにNを
+      インクリメントすること。インクリメントを忘れると、ブラウザは
+      sw.js自体のバイト差分を検知できずservice workerを再インストール
+      しないため、ハッシュ付きJSファイル名が変わるようなアプリ側の
+      更新が永久に反映されない事故につながる。実装時に実際に
+      この事故が発生し、デプロイ後もアプリが古いバージョンのまま
+      （存在しないハッシュのJSを参照して起動失敗）になったことがある）
     PRECACHE_URLS: '/', manifest.json, favicon類, icons/*
     install: PRECACHE_URLSをキャッシュ、skipWaiting()
     activate: 旧キャッシュ削除、clients.claim()
-    fetch: cache-first（キャッシュヒットしなければネットワーク）
-      ※ ナビゲーションリクエストのネットワーク優先化などのオフライン
-        戦略改善は将来課題としてコード内コメントに残っている
+    fetch:
+      - ナビゲーションリクエスト（event.request.mode === 'navigate'、
+        HTML本体）: ネットワーク優先。失敗時（オフライン）のみ
+        キャッシュ、それも無ければ '/' のキャッシュにフォールバック
+      - それ以外（ハッシュ付きJS/CSS・アイコン等）: cache-first
+        （ファイル名にコンテンツハッシュを含むため、キャッシュ優先で
+        問題ない）
 
   登録: index.html末尾のインラインscriptで
     `navigator.serviceWorker.register('/sw.js')`（main.jsではなく
