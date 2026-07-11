@@ -199,11 +199,7 @@
     #gradient-profile  { height: clamp(48px, 10dvh, 90px); flex-shrink: 1; min-height: 48px; }
     #start-ride-btn { flex-shrink: 0; }
 
-    /* HUD panel */
-    #hud-panel {
-      display: flex; flex-direction: column;
-      padding: 0.75rem; gap: 0.5rem; flex: 1; min-height: 0; overflow: hidden;
-    }
+    /* Workout tab の .hud-item/.hud-grid はここで共用定義（Routeの新HUDは .rhud-* を使用） */
     .hud-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -228,24 +224,106 @@
     .hud-unit  { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); color: #6080a0; text-transform: uppercase; }
     .hud-label { font-size: clamp(0.6rem, 1.2dvh, 0.72rem); color: #6080a0; margin-top: 0.1rem; }
     .hud-power-penalty { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); color: #f87171; margin-top: 0.05rem; }
-    #hud-remaining { font-size: 0.72rem; color: #6080a0; margin-top: 0.1rem; }
+    #hud-remaining { font-size: 0.7rem; color: #6080a0; margin-top: 1px; }
 
-    #hud-finish-msg {
-      text-align: center; color: #34d399;
-      font-size: 1.1rem; font-weight: 700; padding: 0.5rem;
-      background: #0a2218; border-radius: 8px;
+    /* ── Route HUD（#ele-view 上のオーバーレイ、グラスモーフィズム） ── */
+    #hud-panel { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+
+    .rhud-glass {
+      background: linear-gradient(180deg, rgba(23,32,44,0.72), rgba(10,14,20,0.72));
+      backdrop-filter: blur(10px) saturate(140%);
+      -webkit-backdrop-filter: blur(10px) saturate(140%);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .rhud-icon { width: 15px; height: 15px; flex-shrink: 0; }
+    .rhud-val  { font-weight: 700; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+    .rhud-unit { color: #6080a0; text-transform: uppercase; letter-spacing: 0.03em; }
+
+    /* 中央上部: リアルタイム系（上段=パワー/ケイデンス/心拍、下段=速度/トルク） */
+    #rhud-top {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; overflow: hidden;
+      border-top: 2px solid #38bdf8;
+    }
+    #rhud-top .row { display: flex; justify-content: center; }
+    #rhud-top .row + .row { border-top: 1px solid rgba(255,255,255,0.08); }
+    #rhud-top .cell {
+      display: flex; align-items: baseline; justify-content: center; gap: 0.4rem;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+    #rhud-top .cell:last-child { border-right: none; }
+    #rhud-top .cell .rhud-icon { color: #38bdf8; opacity: 0.85; align-self: center; }
+    #rhud-top .row-major .cell { padding: 0.5rem 1.15rem; min-width: 84px; }
+    #rhud-top .row-major .rhud-icon { width: 19px; height: 19px; }
+    #rhud-top .row-major .rhud-val  { font-size: clamp(1.3rem, 3.4dvh, 1.7rem); }
+    #rhud-top .row-major .rhud-unit { font-size: 0.68rem; }
+    #rhud-top .row-minor { opacity: 0.92; }
+    #rhud-top .row-minor .cell { padding: 0.3rem 1.15rem 0.4rem; min-width: 84px; }
+    #rhud-top .row-minor .rhud-icon { width: 13px; height: 13px; opacity: 0.65; }
+    #rhud-top .row-minor .rhud-val  { font-size: clamp(0.85rem, 2dvh, 1.05rem); }
+    #rhud-top .row-minor .rhud-unit { font-size: 0.56rem; }
+    #rhud-top .hud-power-penalty { text-align: center; padding-bottom: 0.3rem; }
+
+    /* 左: 累積系（経過時間・走行距離・累積標高） */
+    #rhud-left {
+      position: absolute; top: 10px; left: 10px;
+      display: flex; flex-direction: column; min-width: 120px; overflow: hidden;
+      border-left: 2px solid #64b5f6;
+    }
+    /* 右: ルート情報（勾配・標高） */
+    #rhud-right {
+      position: absolute; top: 10px; right: 10px;
+      display: flex; flex-direction: column; min-width: 120px; overflow: hidden;
+      border-right: 2px solid #ffb454;
+    }
+    .rhud-group-title {
+      font-size: 0.58rem; letter-spacing: 0.08em; color: rgba(255,255,255,0.4);
+      text-transform: uppercase; padding: 0.45rem 0.7rem 0.1rem;
+    }
+    .rhud-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+      padding: 0.3rem 0.7rem; border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .rhud-row:first-of-type { border-top: none; }
+    .rhud-label-row { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; color: #ccd8e4; white-space: nowrap; }
+    .rhud-label-row .rhud-icon { color: rgba(255,255,255,0.45); }
+    .rhud-right-block { text-align: right; }
+    .rhud-row .rhud-val { font-size: 1.15rem; }
+    .rhud-grad-badge {
+      display: inline-flex; align-items: baseline; gap: 2px;
+      padding: 0.1rem 0.5rem; border-radius: 999px;
+      font-weight: 700; font-variant-numeric: tabular-nums;
+      transition: color 0.3s, background 0.3s;
     }
 
-    /* Map */
-    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: column; }
-    #ele-view  { flex: 3; min-height: 80px; background: #0e1820; position: relative; }
-    #map-bottom-row { flex: 2; min-height: 0; display: flex; flex-direction: row; }
+    /* 直近1kmの勾配プロファイル（下部オーバーレイ） */
+    #rhud-gradient-wrap {
+      position: absolute; left: 10px; right: 10px; bottom: 10px;
+      height: clamp(48px, 9dvh, 80px);
+      display: flex; padding: 4px 8px 3px;
+    }
+    #rhud-gradient-wrap #gradient-profile { flex: 1; width: 100%; height: 100%; background: transparent; border-radius: 0; }
+
+    #hud-finish-msg {
+      position: absolute; top: 66px; left: 50%; transform: translateX(-50%);
+      text-align: center; color: #34d399;
+      font-size: 1.1rem; font-weight: 700; padding: 0.5rem 1.5rem;
+      background: rgba(10,34,24,0.85); border-radius: 10px;
+      border: 1px solid rgba(52,211,153,0.5);
+    }
+
+    /* Map — ride中: 左2/3=3Dマップ(#ele-view)+HUDオーバーレイ、右1/3=風景写真/2Dマップ縦積み */
+    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: row; }
+    #ele-view  { flex: 2; min-height: 80px; background: #0e1820; position: relative; }
+    #map-side  { flex: 1; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid #2c4055; }
     #map-inner { flex: 1; min-width: 0; position: relative; }
 
-    /* Mapillary photo panel — 3Dマップ下、2Dマップと横並び */
+    /* Mapillary photo panel — 右カラム(#map-side)上半分、2Dマップ(#map-inner)と縦並び */
     .mapillary-panel {
       flex: 1;
-      min-width: 0;
+      min-width: 0; min-height: 0;
       position: relative;
       overflow: hidden;
       pointer-events: none;
@@ -609,9 +687,8 @@
 
     <div id="route-main">
 
-      <!-- Side panel: pre-ride ↔ HUD -->
+      <!-- Side panel: pre-ride のみ（ライド中は非表示、3Dマップがフル幅に） -->
       <div id="route-side-panel">
-
         <div id="pre-ride-panel">
           <div id="route-controls">
             <button id="load-local-gpx-btn">ローカルからGPXファイルを読み込む</button>
@@ -622,71 +699,102 @@
           <svg id="elevation-profile"></svg>
           <button id="start-ride-btn" disabled>▶ ライドを開始</button>
         </div>
-
-        <div id="hud-panel" hidden>
-          <div class="hud-grid">
-            <div class="hud-item">
-              <span class="hud-value" id="hud-speed">--.-</span>
-              <span class="hud-unit">km/h</span>
-              <span class="hud-label">速度</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-distance">--.-</span>
-              <span class="hud-unit">km</span>
-              <span class="hud-label">距離</span>
-              <span id="hud-remaining">残り--km</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-power">--</span>
-              <span class="hud-unit">W</span>
-              <span class="hud-label">パワー</span>
-              <span id="hud-power-penalty" class="hud-power-penalty" hidden></span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-cadence">--</span>
-              <span class="hud-unit">rpm</span>
-              <span class="hud-label">ケイデンス</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-torque">--.-</span>
-              <span class="hud-unit">N·m</span>
-              <span class="hud-label">トルク</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-hr">--</span>
-              <span class="hud-unit">bpm</span>
-              <span class="hud-label">心拍</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-gradient">+0.0</span>
-              <span class="hud-unit">%</span>
-              <span class="hud-label">勾配</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-altitude">--</span>
-              <span class="hud-unit">m</span>
-              <span class="hud-label">標高</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-time">0:00</span>
-              <span class="hud-unit">&nbsp;</span>
-              <span class="hud-label">時間</span>
-            </div>
-            <div class="hud-item">
-              <span class="hud-value" id="hud-elev">--</span>
-              <span class="hud-unit">m↑</span>
-              <span class="hud-label">累積標高</span>
-            </div>
-          </div>
-          <svg id="gradient-profile"></svg>
-          <div id="hud-finish-msg" hidden>ゴール！</div>
-        </div>
-
       </div><!-- #route-side-panel -->
 
       <div id="map-container">
-        <div id="ele-view" hidden></div>
-        <div id="map-bottom-row">
+
+        <!-- 左2/3: 3Dマップ（走行風景）+ HUDオーバーレイ -->
+        <div id="ele-view" hidden>
+          <div id="hud-panel" hidden>
+
+            <!-- 中央上部: リアルタイム系（上段=パワー/ケイデンス/心拍、下段=速度/トルク） -->
+            <div id="rhud-top" class="rhud-glass">
+              <div class="row row-major">
+                <div class="cell">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 L4 14h6l-1 8 9-12h-6z"/></svg>
+                  <span class="rhud-val" id="hud-power">--</span><span class="rhud-unit">W</span>
+                </div>
+                <div class="cell">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 0 1 14-5"/><path d="M20 12a8 8 0 0 1-14 5"/><path d="M18 4v3h-3M6 20v-3h3"/></svg>
+                  <span class="rhud-val" id="hud-cadence">--</span><span class="rhud-unit">rpm</span>
+                </div>
+                <div class="cell">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.9-10-9.3C.6 8.4 2.1 5 5.4 5c1.9 0 3.3 1 4.6 2.7C11.3 6 12.7 5 14.6 5 17.9 5 19.4 8.4 22 11.7 19.5 16.1 12 21 12 21z"/></svg>
+                  <span class="rhud-val" id="hud-hr">--</span><span class="rhud-unit">bpm</span>
+                </div>
+              </div>
+              <div class="row row-minor">
+                <div class="cell">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 12 L16 8"/><circle cx="12" cy="12" r="9"/><path d="M12 5v1.5M19 12h-1.5M5 12h1.5M17 7l-1 1"/></svg>
+                  <span class="rhud-val" id="hud-speed">--.-</span><span class="rhud-unit">km/h</span>
+                </div>
+                <div class="cell">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  <span class="rhud-val" id="hud-torque">--.-</span><span class="rhud-unit">N·m</span>
+                </div>
+              </div>
+              <span id="hud-power-penalty" class="hud-power-penalty" hidden></span>
+            </div>
+
+            <!-- 左: 累積系 -->
+            <div id="rhud-left" class="rhud-glass">
+              <p class="rhud-group-title">累積</p>
+              <div class="rhud-row">
+                <span class="rhud-label-row">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                  経過時間
+                </span>
+                <span class="rhud-right-block"><span class="rhud-val" id="hud-time">0:00</span></span>
+              </div>
+              <div class="rhud-row">
+                <span class="rhud-label-row">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+                  走行距離
+                </span>
+                <span class="rhud-right-block">
+                  <span class="rhud-val" id="hud-distance">--.-</span><span class="rhud-unit">km</span>
+                  <div id="hud-remaining">残り--km</div>
+                </span>
+              </div>
+              <div class="rhud-row">
+                <span class="rhud-label-row">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 9 8l4 6 3-5 5 11z"/></svg>
+                  累積標高
+                </span>
+                <span class="rhud-right-block"><span class="rhud-val" id="hud-elev">--</span><span class="rhud-unit">m↑</span></span>
+              </div>
+            </div>
+
+            <!-- 右: ルート情報 -->
+            <div id="rhud-right" class="rhud-glass">
+              <p class="rhud-group-title" style="text-align:right;">ルート情報</p>
+              <div class="rhud-row">
+                <span class="rhud-label-row">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 15 8M15 8h-5M15 8v5"/></svg>
+                  勾配
+                </span>
+                <span class="rhud-right-block"><span class="rhud-grad-badge" id="hud-gradient-badge"><span class="rhud-val" id="hud-gradient">+0.0</span><span class="rhud-unit">%</span></span></span>
+              </div>
+              <div class="rhud-row">
+                <span class="rhud-label-row">
+                  <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-9 4 6 3-5 6 8"/><path d="M3 21h18"/></svg>
+                  標高
+                </span>
+                <span class="rhud-right-block"><span class="rhud-val" id="hud-altitude">--</span><span class="rhud-unit">m</span></span>
+              </div>
+            </div>
+
+            <!-- 直近1kmの勾配プロファイル -->
+            <div id="rhud-gradient-wrap" class="rhud-glass">
+              <svg id="gradient-profile"></svg>
+            </div>
+
+            <div id="hud-finish-msg" hidden>ゴール！</div>
+          </div><!-- #hud-panel -->
+        </div><!-- #ele-view -->
+
+        <!-- 右1/3: 上=風景写真、下=2Dマップ -->
+        <div id="map-side">
           <div id="mapillary-panel" class="mapillary-panel" hidden>no image</div>
           <div id="map-inner">
             <button id="recenter-btn" title="現在位置に戻る">
@@ -694,7 +802,8 @@
             </button>
           </div>
         </div>
-      </div>
+
+      </div><!-- #map-container -->
 
     </div><!-- #route-main -->
 

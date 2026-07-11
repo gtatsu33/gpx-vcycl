@@ -217,9 +217,10 @@ window.addEventListener('beforeunload', () => { if (rideController && selectedRo
 const startBtn       = document.getElementById('start-ride-btn')
 const pauseResumeBtn = document.getElementById('pause-resume-btn')
 const stopBtn        = document.getElementById('stop-ride-btn')
-const rideControlsEl = document.getElementById('ride-controls')
-const preRidePanelEl = document.getElementById('pre-ride-panel')
-const hudPanelEl     = document.getElementById('hud-panel')
+const rideControlsEl    = document.getElementById('ride-controls')
+const routeSidePanelEl  = document.getElementById('route-side-panel')
+const preRidePanelEl    = document.getElementById('pre-ride-panel')
+const hudPanelEl        = document.getElementById('hud-panel')
 
 document.getElementById('recenter-btn').addEventListener('click', () => mapView?.recenter())
 document.getElementById('reset-trainer-btn').addEventListener('click', () => {
@@ -315,9 +316,10 @@ stopBtn.addEventListener('click', () => {
 })
 
 function setRidingState(riding) {
-  preRidePanelEl.hidden = riding
-  hudPanelEl.hidden     = !riding
-  rideControlsEl.hidden = !riding
+  routeSidePanelEl.hidden = riding
+  preRidePanelEl.hidden   = riding
+  hudPanelEl.hidden       = !riding
+  rideControlsEl.hidden   = !riding
   document.getElementById('course-elevation-map').style.display = riding ? 'block' : 'none'
   if (riding) {
     isPaused = false

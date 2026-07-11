@@ -42,6 +42,12 @@ export class HUDView {
     set('hud-torque',   torqueNm != null ? torqueNm.toFixed(1) : '--.-')
     set('hud-hr',       heartRateBpm > 0 ? heartRateBpm.toString() : '--')
     set('hud-gradient', (gradientPercent >= 0 ? '+' : '') + gradientPercent.toFixed(1))
+    const gradBadge = document.getElementById('hud-gradient-badge')
+    if (gradBadge) {
+      const col = gradientColor(gradientPercent)
+      gradBadge.style.color      = col
+      gradBadge.style.background = hexToRgba(col, 0.18)
+    }
 
     if (totalDistanceM > 0) {
       const rem = Math.max(0, totalDistanceM - distanceM)
@@ -200,6 +206,12 @@ export class HUDView {
     marker.setAttribute('x1', x)
     marker.setAttribute('x2', x)
   }
+}
+
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16)
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255
+  return `rgba(${r},${g},${b},${alpha})`
 }
 
 function gradientColor(pct) {
