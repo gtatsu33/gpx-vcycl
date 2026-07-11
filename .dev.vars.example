@@ -1,0 +1,8 @@
+# wrangler dev 実行時に読み込まれるローカル用シークレット。
+# 実際の値を .dev.vars にコピーして使う（.dev.vars は git 管理外）。
+# 本番は `wrangler secret put <NAME>` で個別に設定する。
+
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+OWNER_PASSCODE=
+GOOGLE_MAPS_STREETVIEW_KEY=

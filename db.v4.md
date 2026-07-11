@@ -8,12 +8,12 @@
 
 | クライアント     | 用途         | 使用キー          |
 |------------------|--------------|-------------------|
-| gpx-vcycl (PWA)  | 読み取りのみ | service_role key  |
-| gpx-navi (PWA)   | 読み取りのみ | service_role key  |
-| gpxconverter.py  | 書き込み     | service_role key  |
+| gpx-vcycl (PWA)  | SELECT | publishable key  |
+| gpx-navi (PWA)   | SELECT | publishable key  |
+| gpxc-editor（PWA）  | SELECT/INSERT     | publishable key  |
 
-service_role key は RLS をバイパスするため、RLS ポリシーは参照されない。  
-ただしテーブル作成手順の一部として RLS を有効化しておく（将来の拡張に備え）。
+すべてsupabase側に登録されたE-mailアドレスだけが認証手続きが可能。
+
 
 ---
 
