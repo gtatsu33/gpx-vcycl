@@ -15,6 +15,17 @@ function loadGoogleMapsScript(apiKey) {
   })
 }
 
+// 絵文字ラベル用の透明アイコン（Google Maps既定の赤ピンを消し、
+// labelの絵文字だけを表示するための土台。google.mapsロード後に呼ぶこと）
+function emojiMarkerIcon(sizePx = 24) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}"></svg>`
+  return {
+    url:        'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(sizePx, sizePx),
+    anchor:     new google.maps.Point(sizePx / 2, sizePx / 2),
+  }
+}
+
 function haversineM(lat1, lon1, lat2, lon2) {
   const R    = 6371000
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -43,6 +54,8 @@ export class GoogleMapView {
   #routePolyline    = null
   #progressPolyline = null
   #positionMarker   = null
+  #startMarker      = null
+  #goalMarker       = null
   #currentRoute     = null
 
   #lastSVLat      = null
@@ -110,9 +123,13 @@ export class GoogleMapView {
       this.#routePolyline?.setMap(null)
       this.#progressPolyline?.setMap(null)
       this.#positionMarker?.setMap(null)
+      this.#startMarker?.setMap(null)
+      this.#goalMarker?.setMap(null)
       this.#routePolyline    = null
       this.#progressPolyline = null
       this.#positionMarker   = null
+      this.#startMarker      = null
+      this.#goalMarker       = null
 
       const path = route.points.map((p) => ({ lat: p.lat, lng: p.lon }))
       this.#routePolyline = new google.maps.Polyline({
@@ -126,6 +143,22 @@ export class GoogleMapView {
       const bounds = new google.maps.LatLngBounds()
       path.forEach((p) => bounds.extend(p))
       this.#gmap.fitBounds(bounds, 16)
+
+      // スタート/ゴールの絵文字マーカー（gpx-naviと同じ方式。逆走時は自動的に位置が入れ替わる）
+      this.#startMarker = new google.maps.Marker({
+        position: path[0],
+        map:      this.#gmap,
+        icon:     emojiMarkerIcon(),
+        label:    { text: '🟢', fontSize: '20px' },
+        zIndex:   500,
+      })
+      this.#goalMarker = new google.maps.Marker({
+        position: path[path.length - 1],
+        map:      this.#gmap,
+        icon:     emojiMarkerIcon(),
+        label:    { text: '🏁', fontSize: '20px' },
+        zIndex:   500,
+      })
     })
   }
 
@@ -197,6 +230,8 @@ export class GoogleMapView {
     this.#routePolyline?.setMap(null)
     this.#progressPolyline?.setMap(null)
     this.#positionMarker?.setMap(null)
+    this.#startMarker?.setMap(null)
+    this.#goalMarker?.setMap(null)
     this.#photoEl.hidden    = true
     this.#photoEl.innerHTML = ''
   }

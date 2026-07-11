@@ -850,8 +850,13 @@ constants.js に集約する。
   class MapView（別名 export { MapView as LeafletMapView }）
     constructor(containerEl) → LeafletマップにOSMタイルレイヤーを追加、
       ユーザーdragstartで自動追従を解除、ResizeObserverでinvalidateSize
-    setRoute(route) → 既存レイヤーをクリアし、ルート全体を青
-      ポリライン（#4488ff, weight4）で描画、fitBoundsでズーム調整
+    setRoute(route) → 既存レイヤー・マーカーをクリアし、ルート全体を青
+      ポリライン（#4488ff, weight4）で描画、fitBoundsでズーム調整。
+      route.points[0]/[末尾]にスタート（🟢、emojiIcon('🟢')）・
+      ゴール（🏁、emojiIcon('🏁')）の絵文字divIconマーカーを追加する
+      （gpx-naviと同じ絵文字方式に合わせた。route自体が逆走適用済みの
+      points順のため、逆走時は自動的に🟢/🏁の位置が入れ替わる。
+      ウェイポイントは2Dマップには描画しない）
     setCurrentPosition(lat, lon, headingDeg) → 矢印divIconマーカーを
       移動・回転、followMode時は地図をpan
     setProgress(distanceM) → 走行済み区間を緑ポリライン（#4caf50）で
@@ -873,7 +878,9 @@ constants.js に集約する。
       MIN_HEADING_DIFF=20, MIN_INTERVAL_MS=3000）。setRoute/
       setCurrentPosition/setProgress/recenter/invalidateSize/destroyは
       MapView(Leaflet)と同一インターフェース（rideController.js等から
-      プロバイダを意識せず呼べる）。
+      プロバイダを意識せず呼べる）。setRouteでスタート/ゴールの
+      google.maps.Marker（emojiMarkerIcon()の透明1x1 SVGアイコン＋
+      label{text:'🟢'/'🏁'}、MapView(Leaflet)と同じ絵文字）も描画する。
 
   mapFactory.js: createMapView(mapInnerEl, photoPanelEl)
     settings.mapProviderが'google'かつisOwnerMode()の時のみ
