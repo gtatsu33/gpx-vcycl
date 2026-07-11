@@ -6,6 +6,7 @@ dist/
 
 # Local env / secrets
 .env
+.env.*
 *.local
 .dev.vars
 certs/
