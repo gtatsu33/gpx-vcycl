@@ -466,15 +466,21 @@ async function init() {
   isDummyTrainer  = result.isDummyTrainer
 
   const mapProvider = (await getDb().get('settings', 'mapProvider')) ?? 'osm'
-  const isOsmMode   = !(mapProvider === 'google' && isOwnerMode())
+  const isGoogleMode = mapProvider === 'google' && isOwnerMode()
+  // 3Dマップ（EleView）は地図プロバイダによらず常時動作する（resupport_gmap.txt参照）
+  // index.html側で既定hiddenのため、ここで明示的に表示する
   const eleViewEl   = document.getElementById('ele-view')
-  eleViewEl.hidden  = !isOsmMode
+  eleViewEl.hidden  = false
+  eleView = new EleView(eleViewEl)
+
+  // Mapillary（実写風景写真）とGoogle Street Viewは排他。Googleモード時は
+  // #mapillary-panel をStreet View表示に転用するため、Mapillaryは無効化する
+  const mapillaryUsable = MAPILLARY_ENABLED && !isGoogleMode
 
   mapView = await createMapView(
     document.getElementById('map-inner'),
-    document.getElementById('map-container'),
+    document.getElementById('mapillary-panel'),
   )
-  if (isOsmMode) eleView = new EleView(eleViewEl)
 
   hudView = new HUDView()
 
@@ -488,14 +494,14 @@ async function init() {
       selectedRouteId           = id
       selectedRouteName         = name
       selectedReversed          = reversed
-      selectedPointsWithBearing = MAPILLARY_ENABLED ? precomputeBearings(route.points) : null
+      selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(route.points) : null
       startBtn.disabled = false
       eleView?.setRoute(route)
 
       // ルート選択時に1枚目をプレビュー表示
       selectedMapillaryLookahead = null
       selectedMapillaryTracker   = null
-      if (MAPILLARY_ENABLED && selectedPointsWithBearing && id != null) {
+      if (mapillaryUsable && selectedPointsWithBearing && id != null) {
         const cachePrefix = `${id}:${reversed ? 'r' : 'f'}`
         const lookahead   = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
         selectedMapillaryLookahead = lookahead
@@ -539,13 +545,13 @@ async function init() {
         selectedRouteId           = routeSession.routeId
         selectedRouteName         = routeSession.routeName
         selectedReversed          = false // セッション復元時は逆走フラグを保持しないため forward 扱い
-        selectedPointsWithBearing = MAPILLARY_ENABLED ? precomputeBearings(route.points) : null
+        selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(route.points) : null
         startBtn.disabled = false
         eleView?.setRoute(route)
 
         let mapillaryLookahead = null
         let mapillaryTracker   = null
-        if (MAPILLARY_ENABLED && selectedPointsWithBearing) {
+        if (mapillaryUsable && selectedPointsWithBearing) {
           const cachePrefix  = `${routeSession.routeId}:f`
           mapillaryLookahead = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
           mapillaryTracker   = new ActiveIndexTracker(selectedPointsWithBearing)

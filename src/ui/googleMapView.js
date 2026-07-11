@@ -24,11 +24,19 @@ function haversineM(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a))
 }
 
+/**
+ * オーナーモード限定の地図プロバイダ代替。3Dマップ（EleView）はプロバイダ
+ * によらず常時動作するため、このクラスは #map-inner に2Dマップを、
+ * #mapillary-panel（Mapillaryとは排他）にStreet View画像を描画するだけの
+ * 役割に限定する。コンテナ全体の専有・インラインスタイルでのレイアウト
+ * 上書きは行わない（resupport_gmap.txt参照）。
+ */
 export class GoogleMapView {
   #gmap           = null
-  #gmapAreaEl
-  #svAreaEl
-  #svImg
+  #mapEl
+  #photoEl
+  #photoImg
+  #photoPlaceholder
   #initPromise
   #followMode     = true
 
@@ -43,40 +51,36 @@ export class GoogleMapView {
   #lastSVHeading  = null
   #lastSVAt       = 0
 
-  #svPlaceholder
+  /**
+   * @param {HTMLElement} mapEl   2Dマップ用コンテナ（#map-inner）
+   * @param {HTMLElement} photoEl 写真枠コンテナ（#mapillary-panel）
+   */
+  constructor(mapEl, photoEl) {
+    this.#mapEl   = mapEl
+    this.#photoEl = photoEl
 
-  constructor(containerEl) {
-    containerEl.style.display       = 'flex'
-    containerEl.style.flexDirection = 'column'
+    this.#photoEl.hidden     = false
+    this.#photoEl.innerHTML  = ''
 
-    this.#gmapAreaEl = document.createElement('div')
-    this.#gmapAreaEl.style.cssText = 'flex:55;min-height:0;'
+    this.#photoPlaceholder = document.createElement('div')
+    this.#photoPlaceholder.className = 'mapillary-no-image'
+    this.#photoPlaceholder.textContent = 'Street View: ライド開始後に表示'
 
-    this.#svAreaEl = document.createElement('div')
-    this.#svAreaEl.style.cssText = 'flex:45;min-height:0;overflow:hidden;background:#0a0c10;position:relative;'
-
-    this.#svPlaceholder = document.createElement('div')
-    this.#svPlaceholder.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#4a6070;font-size:0.8rem;'
-    this.#svPlaceholder.textContent = 'Street View: ライド開始後に表示'
-
-    this.#svImg = document.createElement('img')
-    this.#svImg.style.cssText = 'width:100%;height:100%;object-fit:cover;display:none;'
-    this.#svImg.alt = ''
-    this.#svImg.onload  = () => {
-      this.#svImg.style.display        = 'block'
-      this.#svPlaceholder.style.display = 'none'
+    this.#photoImg = document.createElement('img')
+    this.#photoImg.alt = ''
+    this.#photoImg.style.display = 'none'
+    this.#photoImg.onload  = () => {
+      this.#photoImg.style.display = 'block'
+      this.#photoPlaceholder.hidden = true
     }
-    this.#svImg.onerror = () => {
-      this.#svImg.style.display        = 'none'
-      this.#svPlaceholder.style.display = 'flex'
-      this.#svPlaceholder.textContent   = 'Street View: 取得できませんでした'
+    this.#photoImg.onerror = () => {
+      this.#photoImg.style.display = 'none'
+      this.#photoPlaceholder.hidden = false
+      this.#photoPlaceholder.textContent = 'Street View: 取得できませんでした'
     }
 
-    this.#svAreaEl.appendChild(this.#svPlaceholder)
-    this.#svAreaEl.appendChild(this.#svImg)
-
-    containerEl.appendChild(this.#svAreaEl)
-    containerEl.appendChild(this.#gmapAreaEl)
+    this.#photoEl.appendChild(this.#photoPlaceholder)
+    this.#photoEl.appendChild(this.#photoImg)
 
     this.#initPromise = this.#init()
   }
@@ -84,11 +88,11 @@ export class GoogleMapView {
   async #init() {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
     if (!apiKey) {
-      this.#gmapAreaEl.textContent = 'VITE_GOOGLE_MAPS_API_KEY が設定されていません'
+      this.#mapEl.textContent = 'VITE_GOOGLE_MAPS_API_KEY が設定されていません'
       return
     }
     await loadGoogleMapsScript(apiKey)
-    this.#gmap = new google.maps.Map(this.#gmapAreaEl, {
+    this.#gmap = new google.maps.Map(this.#mapEl, {
       zoom:             15,
       center:           { lat: 35.0, lng: 136.0 },
       mapTypeId:        'roadmap',
@@ -193,6 +197,8 @@ export class GoogleMapView {
     this.#routePolyline?.setMap(null)
     this.#progressPolyline?.setMap(null)
     this.#positionMarker?.setMap(null)
+    this.#photoEl.hidden    = true
+    this.#photoEl.innerHTML = ''
   }
 
   #maybeUpdateStreetView(lat, lon, headingDeg, gradientPercent) {
@@ -215,14 +221,7 @@ export class GoogleMapView {
     this.#lastSVHeading  = headingDeg
     this.#lastSVAt       = now
 
-    // ── Street View URL ────────────────────────────────────────────────
-    // [本番] Netlify Function 経由（APIキーをブラウザに渡さない）
-    // デプロイ時はこちらを有効にする
-    this.#svImg.src = `/api/streetview?lat=${lat}&lon=${lon}&heading=${Math.round(headingDeg)}`
-
-    // [開発] Google API 直呼び（vite --https / LAN iPad テスト用）
-    // .env.local の VITE_GOOGLE_MAPS_API_KEY が使われる。キーがURLに露出するため本番では使わないこと。
-    // this.#svImg.src = `https://maps.googleapis.com/maps/api/streetview?size=640x360&location=${lat},${lon}&heading=${Math.round(headingDeg)}&pitch=0&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`
-    // ───────────────────────────────────────────────────────────────────
+    // Cloudflare Workers の /api/streetview 経由（APIキーをブラウザに渡さない。13-5節参照）
+    this.#photoImg.src = `/api/streetview?lat=${lat}&lon=${lon}&heading=${Math.round(headingDeg)}`
   }
 }

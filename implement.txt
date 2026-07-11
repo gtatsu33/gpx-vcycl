@@ -36,6 +36,9 @@
              （19章参照。リモートGPX/ZWO読み込みがゲーティング対象）
   (追加)     リモートZWO読み込み（gpx_routesバケット共用）       完了
              （5-5節・10-9節参照。アップロードは対象外、別ツールが担当）
+  (追加)     GoogleMap/StreetView再サポート                     完了
+             （10-5節参照。3Dマップ常時表示化、Mapillaryとの排他対応。
+             本番のBuild変数登録は別途確認要）
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -856,17 +859,42 @@ constants.js に集約する。
     recenter() → followMode再有効化＋現在地に再センター（ズーム15以上）
     invalidateSize() / destroy()
 
-  googleMapView.js（オーナーモード時の代替、mapFactory.jsで選択）:
-    class GoogleMapView(containerEl) — containerEl内にStreetView用div
-      (flex:45)とMap用div(flex:55)を縦に自前生成。位置更新の都度、
-      一定の移動距離・勾配差・方位差・時間間隔の条件を満たした時のみ
-      Street View画像を再取得する間引きロジックを持つ
-      （STREETVIEW_MIN_DIST_M=100, MIN_GRADIENT_DIFF=2,
-      MIN_HEADING_DIFF=20, MIN_INTERVAL_MS=3000）。
+  googleMapView.js（オーナーモード時の代替、mapFactory.jsで選択。
+    2026-07-11に#map-container専有方式から現行方式へ改修）:
+    class GoogleMapView(mapEl, photoEl) — mapEl(#map-inner)に
+      google.maps.Mapを直接描画し、photoEl(#mapillary-panel)に
+      Street View用<img>を追加する。10-2節のRoute画面レイアウト
+      （#ele-view・#map-side、.is-ridingクラス切り替え）とは独立して
+      動作し、コンテナへのインラインstyle上書きは行わない
+      （3Dマップ・全体レイアウトはOSMモードと共通のまま）。
+      位置更新の都度、一定の移動距離・勾配差・方位差・時間間隔の
+      条件を満たした時のみStreet View画像を再取得する間引きロジックを
+      持つ（STREETVIEW_MIN_DIST_M=100, MIN_GRADIENT_DIFF=2,
+      MIN_HEADING_DIFF=20, MIN_INTERVAL_MS=3000）。setRoute/
+      setCurrentPosition/setProgress/recenter/invalidateSize/destroyは
+      MapView(Leaflet)と同一インターフェース（rideController.js等から
+      プロバイダを意識せず呼べる）。
 
-  mapFactory.js: createMapView(osmContainerEl, googleContainerEl)
+  mapFactory.js: createMapView(mapInnerEl, photoPanelEl)
     settings.mapProviderが'google'かつisOwnerMode()の時のみ
-    GoogleMapView、それ以外はMapView(osm)を返す。
+    GoogleMapView(mapInnerEl, photoPanelEl)、それ以外は
+    MapView(mapInnerEl)を返す。
+
+  main.js側の連携（Googleモード時の分岐）:
+    - eleView（3Dマップ）は地図プロバイダによらず常時
+      new EleView(eleViewEl)で生成する（eleViewEl.hidden=falseを
+      明示、index.html側の既定hidden属性を解除する）
+    - mapillaryUsable = MAPILLARY_ENABLED && !isGoogleMode。
+      Googleモード時はprecomputeBearings/MapillaryLookahead関連の
+      初期化を全てスキップする（#mapillary-panelをGoogleMapViewが
+      Street View表示に転用するため、Mapillaryとは排他）
+    - createMapView()には(#map-inner, #mapillary-panel)を渡す
+
+  ※ VITE_GOOGLE_MAPS_API_KEY がCloudflare Workers Builds側の
+    「Settings → Build」変数パネルに登録されているかは、Strava・
+    Supabaseで実際に踏んだのと同じ「ローカル.envにはあるが本番ビルド
+    変数に無い」パターンの可能性があるため、本番投入前に確認すること
+    （実装自体はローカルビルドで動作確認済み。resupport_gmap.txt参照）。
 
 ────────────────────────────────────────
 10-6. deviceManager.js

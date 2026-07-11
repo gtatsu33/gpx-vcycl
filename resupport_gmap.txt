@@ -1,0 +1,135 @@
+================================================================================
+  GoogleMap / Street View 再サポートのためのタスク一覧
+  作成日: 2026-07-11
+  更新日: 2026-07-11（[1]〜[5][8] 実装・ローカル動作確認まで完了。
+    [6]本番環境変数確認・[7]本番動作確認のみ残作業）
+  背景: Routeモードのライド中レイアウト刷新（3Dマップ＋HUDオーバーレイ化、
+    implement.txt §10-2）以降、オーナーモード限定の GoogleMapView が
+    レイアウト的に破綻していた（下記「現状の破綻ポイント」参照）。
+    修正済みの設計はimplement.txt §10-5参照。
+================================================================================
+
+────────────────────────────────────────
+現状の破綻ポイント（再掲）
+────────────────────────────────────────
+
+  1. GoogleMapView(containerEl) は #map-container 全体を自分専有の
+     コンテナとして扱い、Street View用div・Maps用divをその場で生成して
+     直接子要素として追加する設計のまま
+  2. コンストラクタが containerEl.style.display/flexDirection を
+     インラインスタイルで直接上書きする
+  3. 一方、現在の #map-container は #ele-view・#map-side という固定の
+     子要素を持ち、ライド中は .is-riding クラスの有無でCSS側から
+     flex-direction 等を切り替える設計になっている（インラインスタイルは
+     CSSのクラス切り替えより優先されるため、GoogleMapViewが上書きすると
+     ライド中/事前ライドの表示切り替えが機能しなくなる）
+  4. main.js は Google モード時に #ele-view を hidden にするだけで、
+     #map-side は非表示にしないため、「隠れた#ele-view」「空の#map-side
+     （未使用の.mapillary-panel・#map-inner）」「GoogleMapViewが追加した
+     2つのdiv」が同時に存在し、レイアウトが崩れる
+  5. VITE_GOOGLE_MAPS_API_KEY がCloudflare Workers Builds側の
+     「Settings → Build」変数パネルに登録されているか未検証
+     （Strava・Supabaseで実際に踏んだのと同じ「ローカル.envにはあるが
+     本番ビルド変数に無い」パターンの可能性が高い）
+
+
+────────────────────────────────────────
+方針（設計の要点）
+────────────────────────────────────────
+
+  3Dマップ（EleView、Three.js）はGPXの標高データから自前描画しており、
+  地図プロバイダ（OSM/Google）とは本来無関係。現状の「Googleモード時は
+  #ele-viewを隠す」という設計は、GoogleMapViewが#map-container全体を
+  専有していた「新レイアウト以前」の名残であり、今となっては不要な
+  制約になっている可能性が高い。
+
+  再設計の方向性として、GoogleMapViewの役割を「#map-side内の
+  写真枠（Street View）と2Dマップ枠（Google Maps）を提供するもの」に
+  縮小し、#ele-view（3Dマップ＋HUD）は常にプロバイダ問わず動作させる、
+  という形にする。【2026-07-11 合意済み】
+
+
+────────────────────────────────────────
+作業項目
+────────────────────────────────────────
+
+[1] 設計判断（実装前に決めること）
+    - #ele-view（3Dマップ）は地図プロバイダによらず常時動作させてよいか
+      → 【決定済 2026-07-11】Googleモードでも3Dマップ表示は常時ON。
+        main.jsの eleViewEl.hidden = !isOsmMode 分岐は撤去する
+    - Mapillary（実写風景写真）とGoogle Street Viewは排他か
+      → 【決定済 2026-07-11】排他（YES）。どちらか一方が表示されれば
+        よい。Googleモード時はMapillaryのlookahead処理
+        （precomputeBearings/MapillaryLookahead関連の初期化）を
+        main.js側でスキップする
+    - #map-side内の写真枠・地図枠の比率
+      → 【決定済 2026-07-11】現行のMapillary/2Dマップと同一比率
+        （10-2節のmapillary-panel/map-inner、flex:1/flex:1）でよい。
+        GoogleMapView現行の45:55固定比率は採用しない
+
+[2] ✅完了 mapFactory.js の改修
+    createMapView(mapInnerEl, photoPanelEl) に変更。GoogleMapViewには
+    #map-inner・#mapillary-panel（既存スロットの使い回し）を渡す。
+    新規スロットは追加しなかった（[5]参照）。
+
+[3] ✅完了 googleMapView.js の改修
+    コンストラクタのcontainerEl.style上書きを削除。google.maps.Mapは
+    渡されたmapEl(#map-inner)に直接描画、Street View用<img>は
+    photoEl(#mapillary-panel)に追加する方式に変更。
+    #maybeUpdateStreetView()の間引きロジックはそのまま流用。
+
+[4] ✅完了 main.js の改修
+    eleViewEl.hidden = !isOsmMode を撤去し、eleViewEl.hidden = false を
+    明示（3Dマップは常時動作）。mapillaryUsable = MAPILLARY_ENABLED &&
+    !isGoogleMode を導入し、precomputeBearings/MapillaryLookahead関連の
+    3箇所の初期化ガードをこれに置き換え。createMapView()には
+    (#map-inner, #mapillary-panel) を渡す。
+
+[5] ✅完了（方針変更） index.html の改修
+    新規スロットは追加せず、既存の#mapillary-panelをStreet View表示に
+    転用する方式にした（Mapillaryとは排他のため同一スロットで問題ない）。
+    .mapillary-panel/.mapillary-no-image/.mapillary-creditの既存CSSを
+    そのまま流用。index.html自体の変更は無し。
+
+[6] ⬜未完了 環境変数の確認（ユーザー側で実施要）
+    - Cloudflareダッシュボード → gpx-vcycl → Settings → Build →
+      Build変数に VITE_GOOGLE_MAPS_API_KEY が登録されているか確認、
+      未登録なら追加（ローカル.envには設定済みで、ローカルビルドでは
+      正しく焼き込まれることを確認済み）
+    - GOOGLE_MAPS_STREETVIEW_KEY（実行時シークレット、/api/streetview用）
+      は wrangler secret / --secrets-file で既に設定済み（13-5節参照）。
+      値が正しいか、Google Cloud Console側でStreet View Static APIが
+      有効化されているかも念のため確認
+
+[7] 動作確認
+    - ✅ローカル完了: PlaywrightでsessionStorage経由のオーナーモード
+      擬似有効化＋設定変更→リロードにより、事前ライド画面・ライド中
+      画面（.is-ridingクラス含む）とも正しいレイアウトで表示されることを
+      確認（#ele-view常時表示、#mapillary-panelがStreet View表示に
+      転用され取得失敗時のフォールバック表示も正常、#map-innerに
+      Google Mapsが正しくスコープされ他要素を侵食しない）。
+      コンソールエラーはAPIキーのリファラー制限起因のもののみ
+      （テスト環境固有、本番では発生しない想定）
+    - ⬜未完了: 本番環境（Cloudflare Workers）での実地確認
+      （?owner=PASSCODE付きURLで実際にアクセスし、Street View画像の
+      実取得・Google Mapsの実表示まで確認。[6]の環境変数確認後に実施）
+    - ✅OSMモード（通常利用）への影響なし（npm test 118件全通過、
+      既存のRoute画面Playwrightチェックも別途通過済み）
+
+[8] ✅完了 ドキュメント更新
+    spec.txt §9-4・4-7、implement.txt §10-5 を修正済みの設計に
+    合わせて更新済み。本ファイルは[6][7]の残作業完了後に削除してよい。
+
+
+────────────────────────────────────────
+優先度メモ
+────────────────────────────────────────
+
+  本機能は「開発者本人のみ・オーナーモード限定」の実験的機能であり、
+  一般利用（招待ユーザー含む）には一切影響しない。Route本編の
+  機能追加・不具合修正より優先度は低いと考えられる。着手タイミングは
+  ユーザー判断とする。
+
+================================================================================
+  END
+================================================================================
