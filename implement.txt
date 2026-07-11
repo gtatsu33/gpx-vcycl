@@ -32,6 +32,8 @@
   (追加)     Cloudflare Pages → Workers 移行・本番デプロイ      完了
              （15章参照。GitHub連携（Workers Builds）設定済み、
              main push で自動ビルド・デプロイされる）
+  (追加)     招待制ログイン（Supabase Auth・マジックリンク）    完了
+             （19章参照。リモートGPX読み込みのみゲーティング対象）
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -144,6 +146,10 @@
   │   ├── strava/
   │   │   ├── auth.js                # OAuthフロー・トークン管理
   │   │   └── upload.js              # アップロード・処理状況ポーリング
+  │   │
+  │   ├── supabase/                  # 招待制ログイン（マジックリンク、19章）
+  │   │   ├── client.js               # クライアント共有（remoteRoutes.jsとも共用）
+  │   │   └── auth.js                 # sendMagicLink/getSession/signOut等
   │   │
   │   ├── mapillary/                 # 実写風景写真ルックアヘッド機能
   │   │   ├── api.js                 # 外部API呼び出し
@@ -1301,6 +1307,103 @@ constants.js に集約する。
     .dev.vars              （wrangler dev/deploy用の実行時シークレット）
     certs/                （ローカルHTTPS用の自己署名証明書）
     .wrangler               （wranglerのローカルキャッシュ・状態）
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+19. 招待制ログイン（Supabase Auth・マジックリンク）の実装
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  gpx-navi・gpx-editor（同じSupabaseプロジェクトを共有する姉妹アプリ）と
+  同じパターンで実装する。spec.txt 9-5節の機能仕様を参照。
+
+────────────────────────────────────────
+19-1. src/supabase/client.js
+────────────────────────────────────────
+  isSupabaseConfigured() → boolean
+    VITE_SUPABASE_URL と VITE_SUPABASE_ANON_KEY の両方が設定されて
+    いるかを返す。未設定時はヘッダーの歯車アイコン自体を非表示にする
+    （main.js側）。
+
+  getSupabaseClient() → SupabaseClient
+    シングルトンのSupabaseクライアント（@supabase/supabase-js の
+    createClient）。storage/remoteRoutes.js もこの関数を経由して
+    同一クライアントを使う（従来remoteRoutes.js内で独自に
+    createClientしていたのをここに集約、クライアントの二重生成を
+    避ける）。
+
+  ※ VITE_SUPABASE_ANON_KEY には必ずpublishable key（sb_publishable_...）
+    を使うこと。secret key（sb_secret_...）を誤って設定すると
+    クライアントバンドルに焼き込まれ、RLSを無視した全権限が
+    世界に公開されてしまう（実装時に実際にこの取り違えが発生した
+    ため特記する）。
+
+────────────────────────────────────────
+19-2. src/supabase/auth.js
+────────────────────────────────────────
+  sendMagicLink(email) → {ok: true} | {ok: false, error}
+    supabase.auth.signInWithOtp({email, options:{emailRedirectTo:
+    window.location.origin}}) を呼ぶ。サインアップ（signUp）は
+    呼ばない＝招待制（Supabase側で事前登録されたメールアドレスのみ
+    ログインできる）。emailRedirectTo は動的に現在のoriginを使うため、
+    Stravaのredirect_uriのようなビルド時定数の焼き込みは不要
+    （ただしSupabaseダッシュボードの「Redirect URLs」許可リストに
+    本番ドメインを登録しておく必要がある）。
+
+  getSession() → Session|null
+    supabase.auth.getSession() のラッパー。
+
+  onAuthStateChange(callback: (session) => void) → unsubscribe関数
+    supabase.auth.onAuthStateChange() のラッパー。マジックリンク
+    クリック後のセッション復元は supabase-js の detectSessionInUrl
+    （デフォルト有効）が自動処理するため、ここでは購読するだけでよい。
+
+  signOut() → void
+
+────────────────────────────────────────
+19-3. main.js での配線
+────────────────────────────────────────
+  DOM要素:
+    #auth-gear-btn      ヘッダー右上の歯車アイコンボタン
+    #auth-popover        ポップオーバー本体（main.jsがinnerHTMLを都度再構築）
+    #db-status-error     DB初期化失敗時のみ表示するエラーテキスト
+                          （旧#db-statusを置き換え。「DB初期化済み」の
+                          成功メッセージ表示は廃止）
+
+  initAuth()（init()内、initDb()成功後に呼ぶ）:
+    1. isSupabaseConfigured() が false なら #auth-gear-btn を隠して終了
+    2. getSession() で初期状態を取得 → currentUser にセット →
+       updateAuthUI()
+    3. onAuthStateChange() を購読 → currentUser 更新のたびに
+       updateAuthUI() + renderAuthPopover()
+    4. #auth-gear-btn クリックで #auth-popover の open クラスを
+       トグル（開くたびに renderAuthPopover() で中身を再構築）
+    5. ポップオーバー外クリックで自動的に閉じる
+       （document への click リスナーで判定）
+
+  updateAuthUI():
+    ログイン状態に応じて #auth-gear-btn に .logged-in クラスを付与、
+    #load-remote-gpx-btn の disabled を切り替える（ログイン時のみ
+    有効）。ゲーティング対象はこのボタン1つのみ（spec.txt 9-5節）。
+
+  renderAuthPopover():
+    ログイン中: 「ログイン中: {email}」+ ログアウトボタン
+    未ログイン: メール入力 + 送信ボタン + ステータステキスト
+    （送信中/成功/失敗のフィードバックを表示）
+
+────────────────────────────────────────
+19-4. 外部設定（Supabaseダッシュボード側、アプリコード外）
+────────────────────────────────────────
+  - Authentication → Providers → Email でマジックリンクを有効化
+  - Authentication → URL Configuration → Redirect URLs に
+    本番URL（https://gpx-vcycl.tsworks.workers.dev）とローカル開発URL
+    （https://localhost:5173 等）を登録
+  - route_files テーブル・gpx_routes Storageバケットに対し、
+    authenticated ロールのみSELECT/downloadを許可するRLSポリシーを
+    設定（db.v4.md参照。gpx-navi・gpx-editorと共通のSupabase
+    プロジェクト・共通のRLSポリシーを使う）
+  - 招待ユーザーのメールアドレスは Authentication → Users で
+    事前に手動登録する（signUp機能が無いため、未登録メールアドレスは
+    マジックリンクを送っても実際にはログインできない）
 
 ================================================================================
   END OF IMPLEMENT

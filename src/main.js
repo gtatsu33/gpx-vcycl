@@ -20,6 +20,9 @@ import { getRoute }                  from './storage/routes.js'
 import { precomputeBearings }        from './mapillary/bearing.js'
 import { MapillaryLookahead, ActiveIndexTracker } from './mapillary/lookahead.js'
 import { updatePhotoPanel, resetPhotoPanel } from './mapillary/panel.js'
+import { sendMagicLink, getSession, onAuthStateChange, signOut as supabaseSignOut }
+  from './supabase/auth.js'
+import { isSupabaseConfigured } from './supabase/client.js'
 
 const MAPILLARY_ENABLED = Boolean(import.meta.env.VITE_MAPILLARY_TOKEN)
 
@@ -29,8 +32,8 @@ document.getElementById('app-version').textContent = `v${__APP_VERSION__}`
 // ── Mapillary 起動時診断 ────────────────────────────────────────────────
 console.info(`[Mapillary] enabled: ${MAPILLARY_ENABLED}${MAPILLARY_ENABLED ? '' : ' (VITE_MAPILLARY_TOKEN 未設定)'}`)
 
-// ── DB status ──────────────────────────────────────────────────────────
-const dbStatusEl = document.getElementById('db-status')
+// ── DB status（エラー時のみ表示） ─────────────────────────────────────────
+const dbStatusErrorEl = document.getElementById('db-status-error')
 
 // ── Wake Lock ──────────────────────────────────────────────────────────
 let wakeLock = null
@@ -330,18 +333,101 @@ function setRidingState(riding) {
   }
 }
 
+// ── Supabase 招待制ログイン（マジックリンク） ─────────────────────────────
+const authGearBtn     = document.getElementById('auth-gear-btn')
+const authPopoverEl   = document.getElementById('auth-popover')
+const loadRemoteGpxBtn = document.getElementById('load-remote-gpx-btn')
+
+let currentUser = null
+
+function initAuth() {
+  if (!isSupabaseConfigured()) {
+    authGearBtn.hidden = true
+    return
+  }
+  getSession().then((session) => {
+    currentUser = session?.user ?? null
+    updateAuthUI()
+  })
+  onAuthStateChange((session) => {
+    currentUser = session?.user ?? null
+    updateAuthUI()
+    renderAuthPopover()
+  })
+  authGearBtn.addEventListener('click', () => {
+    authPopoverEl.classList.toggle('open')
+    if (authPopoverEl.classList.contains('open')) renderAuthPopover()
+  })
+  document.addEventListener('click', (e) => {
+    if (!authPopoverEl.classList.contains('open')) return
+    if (e.target === authGearBtn || authPopoverEl.contains(e.target)) return
+    authPopoverEl.classList.remove('open')
+  })
+}
+
+function updateAuthUI() {
+  const isLoggedIn = Boolean(currentUser)
+  authGearBtn.classList.toggle('logged-in', isLoggedIn)
+  authGearBtn.title = isLoggedIn ? `ログイン中: ${currentUser.email}` : 'ログイン'
+  loadRemoteGpxBtn.disabled = !isLoggedIn
+  loadRemoteGpxBtn.title    = isLoggedIn ? '' : '招待ユーザー限定の機能です'
+}
+
+function renderAuthPopover() {
+  authPopoverEl.innerHTML = ''
+  if (currentUser) {
+    const p = document.createElement('p')
+    p.textContent = `ログイン中: ${currentUser.email}`
+    const btn = document.createElement('button')
+    btn.textContent = 'ログアウト'
+    btn.addEventListener('click', async () => {
+      await supabaseSignOut()
+      authPopoverEl.classList.remove('open')
+    })
+    authPopoverEl.append(p, btn)
+    return
+  }
+
+  const p = document.createElement('p')
+  p.textContent = '招待ユーザー向けログイン'
+  const input = document.createElement('input')
+  input.type = 'email'
+  input.placeholder = 'メールアドレス'
+  const status = document.createElement('p')
+  status.id = 'auth-popover-status'
+  const sendBtn = document.createElement('button')
+  sendBtn.textContent = 'ログインリンクを送る'
+  sendBtn.addEventListener('click', async () => {
+    const email = input.value.trim()
+    if (!email) return
+    sendBtn.disabled  = true
+    sendBtn.textContent = '送信中...'
+    const result = await sendMagicLink(email)
+    sendBtn.disabled  = false
+    sendBtn.textContent = 'ログインリンクを送る'
+    if (result.ok) {
+      status.textContent = 'メールを確認してください。'
+      status.className   = ''
+    } else {
+      status.textContent = `送信に失敗しました: ${result.error}`
+      status.className   = 'error'
+    }
+  })
+  authPopoverEl.append(p, input, sendBtn, status)
+}
+
 // ── Init ───────────────────────────────────────────────────────────────
 async function init() {
   try {
     await initDb()
-    dbStatusEl.textContent = 'DB初期化済み'
-    dbStatusEl.className   = 'ready'
   } catch (err) {
-    dbStatusEl.textContent = `DB初期化エラー: ${err.message}`
-    dbStatusEl.className   = 'error'
+    dbStatusErrorEl.textContent = `DB初期化エラー: ${err.message}`
+    dbStatusErrorEl.hidden      = false
     console.error(err)
     return
   }
+
+  initAuth()
 
   // オーナーモード: URLに ?owner=PASSCODE があれば検証してセッションに記録
   await activateOwnerModeIfValid()

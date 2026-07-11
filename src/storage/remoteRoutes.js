@@ -1,13 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseClient } from '../supabase/client.js'
 
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY
-const BUCKET        = import.meta.env.VITE_SUPABASE_BUCKET ?? 'gpx_routes'
+const BUCKET = import.meta.env.VITE_SUPABASE_BUCKET ?? 'gpx_routes'
 
-let _client = null
 function client() {
-  if (!_client) _client = createClient(SUPABASE_URL, SUPABASE_KEY)
-  return _client
+  return getSupabaseClient()
 }
 
 /**
