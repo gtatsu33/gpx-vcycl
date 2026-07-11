@@ -437,10 +437,15 @@
     .remote-gpx-item {
       text-align: left; padding: 0.5rem 0.75rem;
       background: #19222e; border: 1px solid #2c4055;
-      border-radius: 7px; font-size: 0.85rem; color: #ccd8e4;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      border-radius: 7px; color: #ccd8e4;
+      display: flex; flex-direction: column; gap: 0.15rem;
     }
     .remote-gpx-item:hover { border-color: #38bdf8; background: #0d2436; }
+    .remote-gpx-name {
+      font-size: 0.85rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .remote-gpx-meta { font-size: 0.7rem; color: #6080a0; }
     #remote-gpx-status { font-size: 0.8rem; color: #6080a0; min-height: 1.4em; }
 
     /* Portrait fallback */

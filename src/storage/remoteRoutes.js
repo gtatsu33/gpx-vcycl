@@ -19,6 +19,28 @@ export async function listRemoteGpxFiles() {
 }
 
 /**
+ * route_files テーブルの表示名・距離・獲得標高を file_key をキーに取得する。
+ * db.v4.md「読み取りフロー（gpx-vcycl）」参照。
+ * @returns {Promise<Map<string, {displayName: string, distanceM: number|null, elevationGainM: number|null}>>}
+ */
+export async function fetchRouteFilesMeta() {
+  const { data, error } = await client()
+    .from('route_files')
+    .select('file_key, display_name, distance_m, elevation_gain_m')
+  if (error) throw new Error(error.message)
+
+  const map = new Map()
+  for (const row of data ?? []) {
+    map.set(row.file_key, {
+      displayName:   row.display_name,
+      distanceM:     row.distance_m,
+      elevationGainM: row.elevation_gain_m,
+    })
+  }
+  return map
+}
+
+/**
  * @param {string} fileName
  * @returns {Promise<string>} GPX text content
  */

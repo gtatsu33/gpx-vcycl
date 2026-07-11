@@ -373,6 +373,13 @@ function updateAuthUI() {
   loadRemoteGpxBtn.title    = isLoggedIn ? '' : '招待ユーザー限定の機能です'
 }
 
+function makeAuthCancelBtn() {
+  const btn = document.createElement('button')
+  btn.textContent = 'キャンセル'
+  btn.addEventListener('click', () => authPopoverEl.classList.remove('open'))
+  return btn
+}
+
 function renderAuthPopover() {
   authPopoverEl.innerHTML = ''
   if (currentUser) {
@@ -384,7 +391,7 @@ function renderAuthPopover() {
       await supabaseSignOut()
       authPopoverEl.classList.remove('open')
     })
-    authPopoverEl.append(p, btn)
+    authPopoverEl.append(p, btn, makeAuthCancelBtn())
     return
   }
 
@@ -413,7 +420,7 @@ function renderAuthPopover() {
       status.className   = 'error'
     }
   })
-  authPopoverEl.append(p, input, sendBtn, status)
+  authPopoverEl.append(p, input, sendBtn, makeAuthCancelBtn(), status)
 }
 
 // ── Init ───────────────────────────────────────────────────────────────

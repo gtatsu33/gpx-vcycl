@@ -1,5 +1,5 @@
 import { saveRoute, listRoutes, deleteRoute } from '../storage/routes.js'
-import { listRemoteGpxFiles, downloadRemoteGpx } from '../storage/remoteRoutes.js'
+import { listRemoteGpxFiles, downloadRemoteGpx, fetchRouteFilesMeta } from '../storage/remoteRoutes.js'
 import { Route } from '../domain/route.js'
 
 /**
@@ -24,6 +24,7 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
   const remoteCancelBtn = document.getElementById('remote-gpx-cancel')
 
   let pendingGpxText = null
+  let remoteMetaMap  = new Map()
 
   // ── Local file load ──
   loadLocalBtn.addEventListener('click', () => fileInput.click())
@@ -67,7 +68,10 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
 
     let files
     try {
-      files = await listRemoteGpxFiles()
+      [files, remoteMetaMap] = await Promise.all([
+        listRemoteGpxFiles(),
+        fetchRouteFilesMeta().catch(() => new Map()), // メタ取得失敗時はfile_keyフォールバックのみで表示続行
+      ])
     } catch (err) {
       remoteStatus.textContent = `取得に失敗しました: ${err.message}`
       return
@@ -81,9 +85,16 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
     remoteStatus.textContent = `${files.length} 件`
 
     for (const file of files) {
+      const meta = remoteMetaMap.get(file.name)
+      const fileBaseName = file.name.replace(/\.gpx$/i, '').replace(/_gne$/i, '')
       const btn = document.createElement('button')
       btn.className = 'remote-gpx-item'
-      btn.textContent = file.name
+      const metaText = [fmtDist(meta?.distanceM), fmtGain(meta?.elevationGainM)]
+        .filter(Boolean).join(' · ')
+      btn.innerHTML = `
+        <span class="remote-gpx-name">${escHtml(meta?.displayName ?? fileBaseName)}</span>
+        ${metaText ? `<span class="remote-gpx-meta">${metaText}</span>` : ''}
+      `
       btn.addEventListener('click', () => loadRemoteFile(file.name))
       remoteList.appendChild(btn)
     }
@@ -108,7 +119,8 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
     try {
       const { name } = Route.fromGpx(pendingGpxText)
       const fileBaseName = fileName.replace(/\.gpx$/i, '').replace(/_gne$/i, '')
-      nameInput.value = (name && name !== 'ルート') ? name : fileBaseName
+      const displayName  = remoteMetaMap.get(fileName)?.displayName
+      nameInput.value = displayName ?? ((name && name !== 'ルート') ? name : fileBaseName)
     } catch (err) {
       alert(`GPXの読み込みに失敗しました: ${err.message}`)
       pendingGpxText = null
@@ -230,9 +242,11 @@ function renderProfile(route, svgEl) {
 }
 
 function fmtDist(m) {
+  if (m == null) return null
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
 }
 function fmtGain(m) {
+  if (m == null) return null
   return `${Math.round(m)} m↑`
 }
 function escHtml(s) {
