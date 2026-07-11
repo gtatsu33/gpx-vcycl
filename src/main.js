@@ -221,6 +221,7 @@ const rideControlsEl    = document.getElementById('ride-controls')
 const routeSidePanelEl  = document.getElementById('route-side-panel')
 const preRidePanelEl    = document.getElementById('pre-ride-panel')
 const hudPanelEl        = document.getElementById('hud-panel')
+const mapContainerEl    = document.getElementById('map-container')
 
 document.getElementById('recenter-btn').addEventListener('click', () => mapView?.recenter())
 document.getElementById('reset-trainer-btn').addEventListener('click', () => {
@@ -320,6 +321,7 @@ function setRidingState(riding) {
   preRidePanelEl.hidden   = riding
   hudPanelEl.hidden       = !riding
   rideControlsEl.hidden   = !riding
+  mapContainerEl.classList.toggle('is-riding', riding)
   document.getElementById('course-elevation-map').style.display = riding ? 'block' : 'none'
   if (riding) {
     isPaused = false
