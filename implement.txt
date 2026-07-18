@@ -1392,11 +1392,27 @@ constants.js に集約する。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-19. 招待制ログイン（Supabase Auth・マジックリンク）の実装
+19. 招待制ログイン（Supabase Auth・メールOTP）の実装
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   gpx-navi・gpx-editor（同じSupabaseプロジェクトを共有する姉妹アプリ）と
   同じパターンで実装する。spec.txt 9-5節の機能仕様を参照。
+
+  【変更履歴・2026-07-18】当初はマジックリンク方式（メール内リンクを
+  クリックしてログイン）で実装したが、以下の問題が判明したため
+  8桁コード手入力方式（verifyOtp）に変更した:
+    - PKCE flow（supabase-js既定）はリンクをリクエストしたブラウザの
+      localStorageにcode verifierを保存し照合するため、別ブラウザ/
+      デバイスでリンクを開くと認証に失敗する
+    - iPhoneのGmailアプリ等、メールクライアントのリンクプレビュー・
+      長押しコピー機能がリンクを自動プリフェッチしてしまい、
+      ワンタイムリンクが本人のクリック前に無効化されてしまう
+    - コード手入力方式であれば、人間が手で入力する必要があるため
+      自動プリフェッチで消費されず、どのブラウザ・デバイスでも使える
+    - 同じSupabaseプロジェクトを共有するgpx-editor・gpx-naviと同時に
+      対応済み。Email Templates（Magic Link）から{{ .ConfirmationURL }}
+      を削除し{{ .Token }}のみを案内する内容に変更済みのため、
+      本アプリ側の追加ダッシュボード作業は不要
 
 ────────────────────────────────────────
 19-1. src/supabase/client.js
@@ -1423,21 +1439,21 @@ constants.js に集約する。
 19-2. src/supabase/auth.js
 ────────────────────────────────────────
   sendMagicLink(email) → {ok: true} | {ok: false, error}
-    supabase.auth.signInWithOtp({email, options:{emailRedirectTo:
-    window.location.origin}}) を呼ぶ。サインアップ（signUp）は
-    呼ばない＝招待制（Supabase側で事前登録されたメールアドレスのみ
-    ログインできる）。emailRedirectTo は動的に現在のoriginを使うため、
-    Stravaのredirect_uriのようなビルド時定数の焼き込みは不要
-    （ただしSupabaseダッシュボードの「Redirect URLs」許可リストに
-    本番ドメインを登録しておく必要がある）。
+    supabase.auth.signInWithOtp({email}) を呼ぶ。サインアップ
+    （signUp）は呼ばない＝招待制（Supabase側で事前登録された
+    メールアドレスのみログインできる）。emailRedirectToは指定しない
+    （リンククリックを使わないコード入力方式のため不要）。
+
+  verifyOtp(email, token) → {ok: true} | {ok: false, error}
+    supabase.auth.verifyOtp({email, token, type: 'email'}) を呼ぶ。
+    メールで届いた8桁コードを検証し、成功するとセッションが確立される。
 
   getSession() → Session|null
     supabase.auth.getSession() のラッパー。
 
   onAuthStateChange(callback: (session) => void) → unsubscribe関数
-    supabase.auth.onAuthStateChange() のラッパー。マジックリンク
-    クリック後のセッション復元は supabase-js の detectSessionInUrl
-    （デフォルト有効）が自動処理するため、ここでは購読するだけでよい。
+    supabase.auth.onAuthStateChange() のラッパー。verifyOtp成功時の
+    セッション確立をこの購読経由で検知する。
 
   signOut() → void
 
@@ -1468,27 +1484,32 @@ constants.js に集約する。
     切り替える（ログイン時のみ有効）。ゲーティング対象はこの2ボタン
     のみ（spec.txt 9-5節）。
 
-  renderAuthPopover():
-    ログイン中: 「ログイン中: {email}」+ ログアウトボタン + キャンセルボタン
-    未ログイン: メール入力 + 送信ボタン + キャンセルボタン + ステータス
-    テキスト（送信中/成功/失敗のフィードバックを表示）
-    キャンセルボタンは両状態共通のmakeAuthCancelBtn()ヘルパーで生成し、
+  renderAuthPopover()（3状態、authPendingEmailで送信済みメールを保持）:
+    - ログイン中: 「ログイン中: {email}」+ ログアウトボタン + キャンセルボタン
+    - コード送信済み（authPendingEmail有り）: 案内テキスト + 8桁コード
+      入力欄 + 「ログイン」ボタン（verifyOtp呼び出し）+ 「戻る」ボタン
+      （authPendingEmailをnullに戻して再描画）+ ステータステキスト
+    - 未ログイン・未送信: メール入力 + 「ログインコードを送る」ボタン
+      （sendMagicLink呼び出し、成功したらauthPendingEmailにセットして
+      再描画）+ キャンセルボタン + ステータステキスト
+    キャンセルボタンは各状態共通のmakeAuthCancelBtn()ヘルパーで生成し、
     クリックで#auth-popoverのopenクラスを外すだけ（状態変更なし）。
 
 ────────────────────────────────────────
 19-4. 外部設定（Supabaseダッシュボード側、アプリコード外）
 ────────────────────────────────────────
-  - Authentication → Providers → Email でマジックリンクを有効化
-  - Authentication → URL Configuration → Redirect URLs に
-    本番URL（https://gpx-vcycl.tsworks.workers.dev）とローカル開発URL
-    （https://localhost:5173 等）を登録
+  - Authentication → Providers → Email でメールOTPを有効化
+  - Authentication → Email Templates → Magic Link のテンプレートから
+    {{ .ConfirmationURL }}（クリック用リンク）を削除し、{{ .Token }}
+    （8桁コード）のみを案内する内容に書き換える（gpx-editor・gpx-navi
+    と共通のSupabaseプロジェクトのため設定済み・追加作業不要）
   - route_files・workout_files テーブル、gpx_routes Storageバケット
     （GPX/ZWO共用）に対し、authenticated ロールのみSELECT/downloadを
     許可するRLSポリシーを設定（db.v4.md参照。gpx-navi・gpx-editorと
     共通のSupabaseプロジェクト・共通のRLSポリシーを使う）
   - 招待ユーザーのメールアドレスは Authentication → Users で
     事前に手動登録する（signUp機能が無いため、未登録メールアドレスは
-    マジックリンクを送っても実際にはログインできない）
+    ログインコードを送っても実際にはログインできない）
 
 ================================================================================
   END OF IMPLEMENT

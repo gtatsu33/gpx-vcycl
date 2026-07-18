@@ -20,7 +20,7 @@ import { getRoute }                  from './storage/routes.js'
 import { precomputeBearings }        from './mapillary/bearing.js'
 import { MapillaryLookahead, ActiveIndexTracker } from './mapillary/lookahead.js'
 import { updatePhotoPanel, resetPhotoPanel } from './mapillary/panel.js'
-import { sendMagicLink, getSession, onAuthStateChange, signOut as supabaseSignOut }
+import { sendMagicLink, verifyOtp, getSession, onAuthStateChange, signOut as supabaseSignOut }
   from './supabase/auth.js'
 import { isSupabaseConfigured } from './supabase/client.js'
 
@@ -383,9 +383,13 @@ function makeAuthCancelBtn() {
   return btn
 }
 
+// 送信済みメールアドレス（コード入力ステップで使う）
+let authPendingEmail = null
+
 function renderAuthPopover() {
   authPopoverEl.innerHTML = ''
   if (currentUser) {
+    authPendingEmail = null
     const p = document.createElement('p')
     p.textContent = `ログイン中: ${currentUser.email}`
     const btn = document.createElement('button')
@@ -398,6 +402,40 @@ function renderAuthPopover() {
     return
   }
 
+  if (authPendingEmail) {
+    const p = document.createElement('p')
+    p.textContent = 'メールに届いた8桁のコードを入力してください。'
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.inputMode = 'numeric'
+    input.placeholder = '12345678'
+    const status = document.createElement('p')
+    status.id = 'auth-popover-status'
+    const verifyBtn = document.createElement('button')
+    verifyBtn.textContent = 'ログイン'
+    verifyBtn.addEventListener('click', async () => {
+      const token = input.value.trim()
+      if (!token) return
+      verifyBtn.disabled  = true
+      verifyBtn.textContent = '確認中...'
+      const result = await verifyOtp(authPendingEmail, token)
+      verifyBtn.disabled  = false
+      verifyBtn.textContent = 'ログイン'
+      if (!result.ok) {
+        status.textContent = `確認に失敗しました: ${result.error}`
+        status.className   = 'error'
+      }
+    })
+    const backBtn = document.createElement('button')
+    backBtn.textContent = '戻る'
+    backBtn.addEventListener('click', () => {
+      authPendingEmail = null
+      renderAuthPopover()
+    })
+    authPopoverEl.append(p, input, verifyBtn, backBtn, status)
+    return
+  }
+
   const p = document.createElement('p')
   p.textContent = '招待ユーザー向けログイン'
   const input = document.createElement('input')
@@ -406,7 +444,7 @@ function renderAuthPopover() {
   const status = document.createElement('p')
   status.id = 'auth-popover-status'
   const sendBtn = document.createElement('button')
-  sendBtn.textContent = 'ログインリンクを送る'
+  sendBtn.textContent = 'ログインコードを送る'
   sendBtn.addEventListener('click', async () => {
     const email = input.value.trim()
     if (!email) return
@@ -414,10 +452,10 @@ function renderAuthPopover() {
     sendBtn.textContent = '送信中...'
     const result = await sendMagicLink(email)
     sendBtn.disabled  = false
-    sendBtn.textContent = 'ログインリンクを送る'
+    sendBtn.textContent = 'ログインコードを送る'
     if (result.ok) {
-      status.textContent = 'メールを確認してください。'
-      status.className   = ''
+      authPendingEmail = email
+      renderAuthPopover()
     } else {
       status.textContent = `送信に失敗しました: ${result.error}`
       status.className   = 'error'

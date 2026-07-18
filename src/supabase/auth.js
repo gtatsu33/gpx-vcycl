@@ -1,11 +1,20 @@
 import { getSupabaseClient } from './client.js'
 
-/** 招待制ログイン（Supabase Auth マジックリンク）。サインアップ機能はない。 */
+/**
+ * 招待制ログイン（Supabase Auth メールOTP）。サインアップ機能はない。
+ * メールクライアントのリンクプリフェッチでワンタイムリンクが無効化される
+ * 問題を避けるため、リンククリックではなく8桁コード手入力方式を使う
+ * （verifyOtpとセットで使う。gpx-editorと同じ方針）。
+ */
 export async function sendMagicLink(email) {
-  const { error } = await getSupabaseClient().auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.origin },
-  })
+  const { error } = await getSupabaseClient().auth.signInWithOtp({ email })
+  if (error) return { ok: false, error: error.message ?? String(error) }
+  return { ok: true }
+}
+
+/** メールで届いた8桁コードを検証してログインする。 */
+export async function verifyOtp(email, token) {
+  const { error } = await getSupabaseClient().auth.verifyOtp({ email, token, type: 'email' })
   if (error) return { ok: false, error: error.message ?? String(error) }
   return { ok: true }
 }
