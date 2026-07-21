@@ -1165,7 +1165,8 @@ constants.js に集約する。
   実行時シークレット OWNER_PASSCODEと一致すればsessionStorageに
   フラグを立てる（パスコード自体はクライアントバンドルに含まれない）。
   isOwnerMode()がtrueの間のみ、設定モーダルの地図プロバイダ選択
-  （Google Maps代替）が表示・有効化される。
+  （Google Maps代替）が表示・有効化される。また、バージョン表示
+  （#app-version）の隣に `#owner-badge`（"(o)"）が表示される。
 
 ────────────────────────────────────────
 13-5. Street View中継（src/worker/index.js, ui/googleMapView.js）
@@ -1217,6 +1218,8 @@ constants.js に集約する。
   __APP_VERSION__: vite.config.local.js / vite.config.js で
     package.jsonのversionを読み込みビルド時定数として注入。
     main.jsが `#app-version` 要素に 'v' + __APP_VERSION__ を表示。
+    オーナーモード時は隣接する `#owner-badge` に "(o)" が表示される
+    （詳細は13-4節）。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

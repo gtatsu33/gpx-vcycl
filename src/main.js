@@ -481,6 +481,7 @@ async function init() {
   await activateOwnerModeIfValid()
   if (isOwnerMode()) {
     document.getElementById('map-provider-group').hidden = false
+    document.getElementById('owner-badge').hidden = false
   }
 
   // Strava OAuth コールバック処理（リダイレクトで戻ってきた場合）
