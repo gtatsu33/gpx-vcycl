@@ -248,8 +248,8 @@
     .hud-power-penalty { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); color: #f87171; margin-top: 0.05rem; }
     #hud-remaining { font-size: 0.7rem; color: #6080a0; margin-top: 1px; }
 
-    /* ── Route HUD（#ele-view 上のオーバーレイ、グラスモーフィズム） ── */
-    #hud-panel { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+    /* ── Route HUD（#map-container直下、常にメイン(左)スロット上のオーバーレイ、グラスモーフィズム） ── */
+    #hud-panel { position: absolute; top: 0; left: 0; bottom: 0; width: 100%; z-index: 5; pointer-events: none; }
 
     .rhud-glass {
       background: linear-gradient(180deg, rgba(23,32,44,0.72), rgba(10,14,20,0.72));
@@ -337,7 +337,7 @@
     }
 
     /* Map — 事前ライド(既定): #ele-view が上段フル幅、mapillary+2Dマップが下段で横並び（現状維持） */
-    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: column; }
+    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: column; position: relative; }
     #ele-view  { flex: 3; min-height: 80px; background: #0e1820; position: relative; }
     #map-side  { flex: 2; min-height: 0; display: flex; flex-direction: row; }
     #map-inner { flex: 1; min-width: 0; position: relative; }
@@ -345,9 +345,17 @@
     /* Map — ride中: 左2/3=3Dマップ(#ele-view)+HUDオーバーレイ、右1/3=風景写真/2Dマップ縦積み */
     #map-container.is-riding { flex-direction: row; }
     #map-container.is-riding #ele-view { flex: 2; }
+    /* HUDはメイン(flex:2)スロットの幅(2/3)分のみをオーバーレイ。表示タイプ入れ替えでも
+       メイン/サブの flex 比率(2:1)自体は不変のためこの幅で常に正しい位置を覆う */
+    #map-container.is-riding #hud-panel { width: calc(100% * 2 / 3); }
     #map-container.is-riding #map-side {
       flex: 1; flex-direction: column; border-left: 1px solid #2c4055;
     }
+
+    /* 表示タイプ入れ替え（ライド中のみ）: 3D(#ele-view)とMapillary/StreetView写真(.mapillary-panel)の
+       大小・左右を入れ替える。#map-side内の2Dマップ(#map-inner)は常に固定。 */
+    #map-container.is-riding.is-swapped #ele-view { flex: 1; }
+    #map-container.is-riding.is-swapped .mapillary-panel { flex: 2; }
 
     /* Mapillary photo panel — #map-side内で2Dマップ(#map-inner)と並ぶ（事前=横並び／ライド中=縦並び） */
     .mapillary-panel {
@@ -744,8 +752,11 @@
       <div id="map-container">
 
         <!-- 左2/3: 3Dマップ（走行風景）+ HUDオーバーレイ -->
-        <div id="ele-view" hidden>
-          <div id="hud-panel" hidden>
+        <div id="ele-view" hidden></div>
+
+        <!-- HUDは#ele-view/.mapillary-panelどちらが表示タイプ入れ替えでメイン側に来ても
+             常にメイン(左)スロットをオーバーレイするよう、#map-container直下の独立要素にする -->
+        <div id="hud-panel" hidden>
 
             <!-- 中央上部: リアルタイム系（上段=パワー/ケイデンス/心拍、下段=速度/トルク） -->
             <div id="rhud-top" class="rhud-glass">
@@ -830,8 +841,7 @@
             </div>
 
             <div id="hud-finish-msg" hidden>ゴール！</div>
-          </div><!-- #hud-panel -->
-        </div><!-- #ele-view -->
+        </div><!-- #hud-panel -->
 
         <!-- 右1/3: 上=風景写真、下=2Dマップ -->
         <div id="map-side">
@@ -855,6 +865,7 @@
       <button id="pause-resume-btn">⏸ 一時停止</button>
       <button id="stop-ride-btn">⏹ 終了</button>
       <button id="reset-trainer-btn" class="btn-warning">⚠ Reset Trainer</button>
+      <button id="layout-toggle-btn">表示タイプA</button>
     </div>
 
   </div><!-- #tab-route -->

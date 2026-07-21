@@ -750,8 +750,25 @@ constants.js に集約する。
         （どちらのCSSルールも同じ#ele-view/#map-side要素に対する
         上書きとして定義）
 
-  #hud-panel（#ele-view内、position:absolute; inset:0; pointer-events:
-    none。ライド中のみhidden解除）
+      表示タイプA/B入れ替え（#layout-toggle-btn、main.jsの
+      setDisplayLayoutSwapped）: #map-inner（2Dマップ）は動かさず、
+      #ele-viewと.mapillary-panelのDOM位置をinsertBeforeで物理的に
+      入れ替える。#map-containerに.is-swappedクラスを付与し、
+      #map-container.is-riding.is-swapped #ele-view { flex:1 }、
+      同 .mapillary-panel { flex:2 } で大小を上書き。#map-side自体の
+      flex-direction:column／border-leftはロール（右カラム）として
+      不変のため上書き不要。ライド終了時（setRidingStateでriding=false）
+      に必ずsetDisplayLayoutSwapped(false)でタイプAへ戻し、事前ライド
+      画面（#ele-view/.mapillary-panelが本来の親子関係を前提とする
+      レイアウト）に影響しないようにしている。
+
+  #hud-panel（#map-container直下の独立要素、position:absolute; top:0;
+    left:0; bottom:0; width:100%（is-riding時はcalc(100% * 2 / 3)で
+    メインスロット幅に限定）; pointer-events:none。ライド中のみhidden
+    解除）。表示タイプA/B入れ替え時も#ele-view/.mapillary-panelの
+    どちらとも親子関係を持たないため巻き込まれず、常にメイン(左)
+    スロットをオーバーレイする（メイン/サブのflex比率2:1は入れ替え
+    時も不変なため、この固定幅で正しく追従する）
     #rhud-top（.rhud-glass、position:absolute、上部中央）
       .row-major（パワー/ケイデンス/心拍、大きめ）
       .row-minor（速度/トルク、小さめ、中央揃え）

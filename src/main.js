@@ -231,6 +231,29 @@ document.getElementById('reset-trainer-btn').addEventListener('click', () => {
   ftmsClient?.reset().catch((err) => console.warn('Reset trainer failed:', err))
 })
 
+const layoutToggleBtn = document.getElementById('layout-toggle-btn')
+
+function setDisplayLayoutSwapped(swapped) {
+  const eleViewEl   = document.getElementById('ele-view')
+  const mapillaryEl = document.getElementById('mapillary-panel')
+  const mapSideEl   = document.getElementById('map-side')
+  const mapInnerEl  = document.getElementById('map-inner')
+
+  mapContainerEl.classList.toggle('is-swapped', swapped)
+  if (swapped) {
+    mapContainerEl.insertBefore(mapillaryEl, mapSideEl)
+    mapSideEl.insertBefore(eleViewEl, mapInnerEl)
+  } else {
+    mapContainerEl.insertBefore(eleViewEl, mapSideEl)
+    mapSideEl.insertBefore(mapillaryEl, mapInnerEl)
+  }
+  layoutToggleBtn.textContent = swapped ? '表示タイプB' : '表示タイプA'
+}
+
+layoutToggleBtn.addEventListener('click', () => {
+  setDisplayLayoutSwapped(!mapContainerEl.classList.contains('is-swapped'))
+})
+
 function showStravaWarningDialog() {
   return new Promise((resolve) => {
     const overlay = document.getElementById('strava-warning-overlay')
@@ -320,6 +343,7 @@ stopBtn.addEventListener('click', () => {
 })
 
 function setRidingState(riding) {
+  if (!riding) setDisplayLayoutSwapped(false)
   routeSidePanelEl.hidden = riding
   preRidePanelEl.hidden   = riding
   hudPanelEl.hidden       = !riding
