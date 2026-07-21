@@ -5,11 +5,15 @@ const STREETVIEW_MIN_INTERVAL_MS   = 3000
 
 function loadGoogleMapsScript(apiKey) {
   return new Promise((resolve, reject) => {
-    if (window.google?.maps) { resolve(); return }
+    if (window.google?.maps?.Map) { resolve(); return }
+    const callbackName = `__gmapsInit_${Date.now()}`
+    window[callbackName] = () => {
+      delete window[callbackName]
+      resolve()
+    }
     const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&libraries=marker`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&libraries=marker&callback=${callbackName}`
     script.async = true
-    script.onload  = resolve
     script.onerror = () => reject(new Error('Google Maps script load failed'))
     document.head.appendChild(script)
   })
