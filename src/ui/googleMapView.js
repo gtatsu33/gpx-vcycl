@@ -7,7 +7,7 @@ function loadGoogleMapsScript(apiKey) {
   return new Promise((resolve, reject) => {
     if (window.google?.maps) { resolve(); return }
     const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&libraries=marker`
     script.async = true
     script.onload  = resolve
     script.onerror = () => reject(new Error('Google Maps script load failed'))
@@ -15,15 +15,25 @@ function loadGoogleMapsScript(apiKey) {
   })
 }
 
-// 絵文字ラベル用の透明アイコン（Google Maps既定の赤ピンを消し、
-// labelの絵文字だけを表示するための土台。google.mapsロード後に呼ぶこと）
-function emojiMarkerIcon(sizePx = 24) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}"></svg>`
-  return {
-    url:        'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new google.maps.Size(sizePx, sizePx),
-    anchor:     new google.maps.Point(sizePx / 2, sizePx / 2),
-  }
+// 絵文字だけを表示するAdvancedMarkerElement用のcontent要素
+// （anchorLeft/anchorTop:'-50%'と組み合わせ、絵文字の中心を座標にアンカーする）
+function emojiMarkerContent(emoji, sizePx = 22) {
+  const div = document.createElement('div')
+  div.textContent   = emoji
+  div.style.fontSize = `${sizePx}px`
+  div.style.lineHeight = '1'
+  return div
+}
+
+// 現在位置マーカー用の矢印SVG content要素（回転はCSS transformで適用）
+function createPositionMarkerContent() {
+  const div = document.createElement('div')
+  div.style.width  = '28px'
+  div.style.height = '32px'
+  div.innerHTML = `<svg width="28" height="32" viewBox="0 0 28 32">
+    <path d="M 14 2 L 26 30 L 14 24 L 2 30 Z" fill="#e94560" stroke="#ffffff" stroke-width="2"/>
+  </svg>`
+  return div
 }
 
 function haversineM(lat1, lon1, lat2, lon2) {
@@ -54,6 +64,7 @@ export class GoogleMapView {
   #routePolyline    = null
   #progressPolyline = null
   #positionMarker   = null
+  #positionMarkerContent = null
   #startMarker      = null
   #goalMarker       = null
   #currentRoute     = null
@@ -109,6 +120,7 @@ export class GoogleMapView {
       zoom:             15,
       center:           { lat: 35.0, lng: 136.0 },
       mapTypeId:        'roadmap',
+      mapId:            import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
       disableDefaultUI: true,
       zoomControl:      true,
       gestureHandling:  'greedy',
@@ -122,9 +134,9 @@ export class GoogleMapView {
       if (!this.#gmap) return
       this.#routePolyline?.setMap(null)
       this.#progressPolyline?.setMap(null)
-      this.#positionMarker?.setMap(null)
-      this.#startMarker?.setMap(null)
-      this.#goalMarker?.setMap(null)
+      if (this.#positionMarker) this.#positionMarker.map = null
+      if (this.#startMarker)    this.#startMarker.map    = null
+      if (this.#goalMarker)     this.#goalMarker.map     = null
       this.#routePolyline    = null
       this.#progressPolyline = null
       this.#positionMarker   = null
@@ -145,19 +157,21 @@ export class GoogleMapView {
       this.#gmap.fitBounds(bounds, 16)
 
       // スタート/ゴールの絵文字マーカー（gpx-naviと同じ方式。逆走時は自動的に位置が入れ替わる）
-      this.#startMarker = new google.maps.Marker({
-        position: path[0],
-        map:      this.#gmap,
-        icon:     emojiMarkerIcon(),
-        label:    { text: '🟢', fontSize: '20px' },
-        zIndex:   500,
+      this.#startMarker = new google.maps.marker.AdvancedMarkerElement({
+        position:   path[0],
+        map:        this.#gmap,
+        content:    emojiMarkerContent('🟢'),
+        anchorLeft: '-50%',
+        anchorTop:  '-50%',
+        zIndex:     500,
       })
-      this.#goalMarker = new google.maps.Marker({
-        position: path[path.length - 1],
-        map:      this.#gmap,
-        icon:     emojiMarkerIcon(),
-        label:    { text: '🏁', fontSize: '20px' },
-        zIndex:   500,
+      this.#goalMarker = new google.maps.marker.AdvancedMarkerElement({
+        position:   path[path.length - 1],
+        map:        this.#gmap,
+        content:    emojiMarkerContent('🏁'),
+        anchorLeft: '-50%',
+        anchorTop:  '-50%',
+        zIndex:     500,
       })
     })
   }
@@ -165,27 +179,19 @@ export class GoogleMapView {
   setCurrentPosition(lat, lon, headingDeg, gradientPercent = 0) {
     if (!this.#gmap) return
 
-    const icon = {
-      path:        'M 14 2 L 26 30 L 14 24 L 2 30 Z',
-      fillColor:   '#e94560',
-      fillOpacity: 1,
-      strokeColor: '#ffffff',
-      strokeWeight: 2,
-      rotation:    headingDeg,
-      scale:       1,
-      anchor:      new google.maps.Point(14, 18),
-    }
-
     if (!this.#positionMarker) {
-      this.#positionMarker = new google.maps.Marker({
-        position: { lat, lng: lon },
-        map:      this.#gmap,
-        icon,
+      this.#positionMarkerContent = createPositionMarkerContent()
+      this.#positionMarker = new google.maps.marker.AdvancedMarkerElement({
+        position:   { lat, lng: lon },
+        map:        this.#gmap,
+        content:    this.#positionMarkerContent,
+        anchorLeft: '-50%',
+        anchorTop:  '-50%',
       })
     } else {
-      this.#positionMarker.setPosition({ lat, lng: lon })
-      this.#positionMarker.setIcon(icon)
+      this.#positionMarker.position = { lat, lng: lon }
     }
+    this.#positionMarkerContent.style.transform = `rotate(${headingDeg}deg)`
 
     if (this.#followMode) this.#gmap.panTo({ lat, lng: lon })
     this.#maybeUpdateStreetView(lat, lon, headingDeg, gradientPercent)
@@ -217,7 +223,7 @@ export class GoogleMapView {
   recenter() {
     this.#followMode = true
     if (this.#positionMarker && this.#gmap) {
-      this.#gmap.setCenter(this.#positionMarker.getPosition())
+      this.#gmap.setCenter(this.#positionMarker.position)
       this.#gmap.setZoom(Math.max(this.#gmap.getZoom() ?? 0, 15))
     }
   }
@@ -229,9 +235,9 @@ export class GoogleMapView {
   destroy() {
     this.#routePolyline?.setMap(null)
     this.#progressPolyline?.setMap(null)
-    this.#positionMarker?.setMap(null)
-    this.#startMarker?.setMap(null)
-    this.#goalMarker?.setMap(null)
+    if (this.#positionMarker) this.#positionMarker.map = null
+    if (this.#startMarker)    this.#startMarker.map    = null
+    if (this.#goalMarker)     this.#goalMarker.map     = null
     this.#photoEl.hidden    = true
     this.#photoEl.innerHTML = ''
   }
