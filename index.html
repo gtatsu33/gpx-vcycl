@@ -336,26 +336,22 @@
       border: 1px solid rgba(52,211,153,0.5);
     }
 
-    /* Map — 事前ライド(既定): #ele-view が上段フル幅、mapillary+2Dマップが下段で横並び（現状維持） */
-    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: column; position: relative; }
-    #ele-view  { flex: 3; min-height: 80px; background: #0e1820; position: relative; }
-    #map-side  { flex: 2; min-height: 0; display: flex; flex-direction: row; }
-    #map-inner { flex: 1; min-width: 0; position: relative; }
-
-    /* Map — ride中: 左2/3=3Dマップ(#ele-view)+HUDオーバーレイ、右1/3=風景写真/2Dマップ縦積み */
-    #map-container.is-riding { flex-direction: row; }
-    #map-container.is-riding #ele-view { flex: 2; }
+    /* Map — 常時: 左2/3=3Dマップ(#ele-view)、右1/3=風景写真/2Dマップ縦積み。
+       ライド中/事前で見た目を統一し、ライド開始時のレイアウト切り替わりを防ぐ。 */
+    #map-container { flex: 2; min-width: 0; display: flex; flex-direction: row; position: relative; }
+    #ele-view  { flex: 2; min-height: 80px; background: #0e1820; position: relative; }
     /* HUDはメイン(flex:2)スロットの幅(2/3)分のみをオーバーレイ。表示タイプ入れ替えでも
        メイン/サブの flex 比率(2:1)自体は不変のためこの幅で常に正しい位置を覆う */
-    #map-container.is-riding #hud-panel { width: calc(100% * 2 / 3); }
-    #map-container.is-riding #map-side {
-      flex: 1; flex-direction: column; border-left: 1px solid #2c4055;
+    #hud-panel { width: calc(100% * 2 / 3); }
+    #map-side  {
+      flex: 1; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid #2c4055;
     }
+    #map-inner { flex: 1; min-width: 0; position: relative; }
 
-    /* 表示タイプ入れ替え（ライド中のみ）: 3D(#ele-view)とMapillary/StreetView写真(.mapillary-panel)の
+    /* 表示タイプ入れ替え: 3D(#ele-view)とMapillary/StreetView写真(.mapillary-panel)の
        大小・左右を入れ替える。#map-side内の2Dマップ(#map-inner)は常に固定。 */
-    #map-container.is-riding.is-swapped #ele-view { flex: 1; }
-    #map-container.is-riding.is-swapped .mapillary-panel { flex: 2; }
+    #map-container.is-swapped #ele-view { flex: 1; }
+    #map-container.is-swapped .mapillary-panel { flex: 2; }
 
     /* Mapillary photo panel — #map-side内で2Dマップ(#map-inner)と並ぶ（事前=横並び／ライド中=縦並び） */
     .mapillary-panel {

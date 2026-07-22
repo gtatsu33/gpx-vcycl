@@ -737,37 +737,31 @@ constants.js に集約する。
   #route-main（flex row）
     #route-side-panel（事前ライドのみ表示、ライド中は要素ごとhidden）
       └ #pre-ride-panel（ルート一覧・標高プレビュー・開始ボタン）
-    #map-container
-      既定（事前ライド時）: flex-direction: column
-        #ele-view（flex:3、3Dマップ、Three.jsのcanvasを内包）
-        #map-side（flex:2、flex-direction: row）
-          .mapillary-panel（flex:1）/ #map-inner（flex:1）
-      .is-riding クラス付与時（ライド中のみ、main.jsのsetRidingStateで
-      #map-containerに動的付与）: flex-direction: row に切替
-        #ele-view: flex:2
-        #map-side: flex:1、flex-direction: column に切替
-          （mapillary-panel上半分／map-inner下半分）
-      ※ 事前ライド画面のレイアウトを崩さないために、行/列の切替は
-        .is-ridingクラスの有無で明確に分岐させている
-        （どちらのCSSルールも同じ#ele-view/#map-side要素に対する
-        上書きとして定義）
+    #map-container（事前ライド・ライド中で共通のレイアウト。ライド
+      開始/終了時に見た目が切り替わって見にくくなるのを避けるため、
+      #map-containerには行/列を分岐させるクラスを設けず常に同一の
+      flex-direction: row とした）
+        #ele-view（flex:2、3Dマップ、Three.jsのcanvasを内包）
+        #map-side（flex:1、flex-direction: column）
+          .mapillary-panel（flex:1、上半分）/ #map-inner（flex:1、下半分）
 
       表示タイプA/B入れ替え（#layout-toggle-btn、main.jsの
       setDisplayLayoutSwapped）: #map-inner（2Dマップ）は動かさず、
       #ele-viewと.mapillary-panelのDOM位置をinsertBeforeで物理的に
       入れ替える。#map-containerに.is-swappedクラスを付与し、
-      #map-container.is-riding.is-swapped #ele-view { flex:1 }、
+      #map-container.is-swapped #ele-view { flex:1 }、
       同 .mapillary-panel { flex:2 } で大小を上書き。#map-side自体の
       flex-direction:column／border-leftはロール（右カラム）として
       不変のため上書き不要。ライド終了時（setRidingStateでriding=false）
-      に必ずsetDisplayLayoutSwapped(false)でタイプAへ戻し、事前ライド
-      画面（#ele-view/.mapillary-panelが本来の親子関係を前提とする
-      レイアウト）に影響しないようにしている。
+      に必ずsetDisplayLayoutSwapped(false)でタイプAへ戻す。
+      なお main.js の setRidingState は #map-container に .is-riding
+      クラスを付与するが、これはレイアウトには使われておらず現状は
+      未使用（他の用途で判定が必要になった場合のフック）。
 
   #hud-panel（#map-container直下の独立要素、position:absolute; top:0;
-    left:0; bottom:0; width:100%（is-riding時はcalc(100% * 2 / 3)で
-    メインスロット幅に限定）; pointer-events:none。ライド中のみhidden
-    解除）。表示タイプA/B入れ替え時も#ele-view/.mapillary-panelの
+    left:0; bottom:0; width: calc(100% * 2 / 3)（メインスロット幅に
+    限定、事前/ライド中とも常時）; pointer-events:none。ライド中のみ
+    hidden解除）。表示タイプA/B入れ替え時も#ele-view/.mapillary-panelの
     どちらとも親子関係を持たないため巻き込まれず、常にメイン(左)
     スロットをオーバーレイする（メイン/サブのflex比率2:1は入れ替え
     時も不変なため、この固定幅で正しく追従する）
