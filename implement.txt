@@ -846,7 +846,13 @@ constants.js に集約する。
     コンストラクタでcontainerEl.style.position='relative'、canvas生成、
     WebGLRenderer(alpha:true, 背景透過でCSS側の空色を活かす)、
     PerspectiveCamera(fov50)、Fog(FOG_NEAR=200〜FOG_FAR=800m)、
-    ResizeObserverでリサイズ追従。
+    ResizeObserverでリサイズ追従。加えて描画ループ（毎フレーム）内でも
+      コンテナの実サイズ変化を検知し次第renderer/cameraへ同期する
+      （#syncedW/#syncedHで前回値と比較、変化があった場合のみ実処理）。
+      コンストラクタ実行時点でコンテナが非表示タブの中にありサイズ0の
+      ことがあり、その場合ResizeObserverの初回発火・main.js側の明示的
+      resize()呼び出しだけでは正しいviewportに復帧しきらないケースが
+      あったため、フレーム毎の追従を必須の保険としている。
     setRoute(route) → ルート点群から道路リボン・壁・センターライン・
       エッジのメッシュを再構築、1kmごとの距離看板・ウェイポイント看板
       （makeSignSprite、Canvas texture）を配置

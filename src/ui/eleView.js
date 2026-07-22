@@ -51,6 +51,8 @@ export class EleView {
   #currentDistM  = 0
   #signs    = []   // { distM, postMesh, panel }
   #wptSigns = []   // { distM, postMesh, panel }
+  #syncedW  = 0     // 直近syncSize()成功時の幅（毎フレーム変化検知用）
+  #syncedH  = 0     // 同、高さ
 
   constructor(containerEl) {
     this.#container = containerEl
@@ -143,6 +145,9 @@ export class EleView {
   #syncSize() {
     const rect = this.#container.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return
+    if (rect.width === this.#syncedW && rect.height === this.#syncedH) return
+    this.#syncedW = rect.width
+    this.#syncedH = rect.height
     this.#renderer.setSize(rect.width, rect.height, false)
     this.#camera.aspect = rect.width / rect.height
     this.#camera.updateProjectionMatrix()
@@ -270,6 +275,10 @@ export class EleView {
     const tick = () => {
       requestAnimationFrame(tick)
       if (this.#container.offsetParent === null) return
+      // 生成時にコンテナが非表示（サイズ0）だと#syncSize()が早期リターンし続け、
+      // Three.jsの初期キャンバスサイズ/aspect=1のまま焼き付く。実サイズが変わる
+      // 限り毎フレーム追従させ、初回の不正viewportを構造的に無くす。
+      this.#syncSize()
       if (this.#pts3D) {
         const delta = this.#targetDistM - this.#currentDistM
         if (Math.abs(delta) > 0.05) {
