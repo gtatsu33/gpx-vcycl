@@ -138,6 +138,17 @@ export class EleView {
     this.#updateSignVisibility(distanceM, this.#wptSigns)
   }
 
+  /** 開始距離の選択などプレビュー用: LERPで追従させず即座にその地点へ飛ぶ。 */
+  previewAt(distanceM) {
+    if (!this.#pts3D) return
+    this.#targetDistM  = distanceM
+    this.#currentDistM = distanceM
+    this.#updateCameraAt(distanceM)
+    this.#updateDrawRange(distanceM)
+    this.#updateSignVisibility(distanceM, this.#signs)
+    this.#updateSignVisibility(distanceM, this.#wptSigns)
+  }
+
   resize() { this.#syncSize() }
 
   // ── private ──────────────────────────────────────────────────────────

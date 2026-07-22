@@ -1,17 +1,23 @@
-import { saveRoute, listRoutes, deleteRoute } from '../storage/routes.js'
+import { saveRoute, listRoutes, deleteRoute, getRouteProgress } from '../storage/routes.js'
 import { listRemoteGpxFiles, downloadRemoteGpx, fetchRouteFilesMeta } from '../storage/remoteRoutes.js'
 import { Route } from '../domain/route.js'
 
+const START_DISTANCE_MARGIN_M = 50 // ルート終端ぎりぎりを開始距離に選べないようにする余白
+
 /**
  * @param {import('./map.js').MapView} mapView
- * @param {{ onRouteSelected?: (route: import('../domain/route.js').Route) => void }} [opts]
+ * @param {{
+ *   onRouteSelected?:        (args: { route, id, name, reversed, startDistanceM: number }) => void,
+ *   onStartDistanceChanged?: (startDistanceM: number) => void,
+ * }} [opts]
  */
-export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
+export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanceChanged } = {}) {
   const loadLocalBtn  = document.getElementById('load-local-gpx-btn')
   const loadRemoteBtn = document.getElementById('load-remote-gpx-btn')
   const fileInput     = document.getElementById('gpx-file-input')
   const routeListEl   = document.getElementById('route-list')
   const profileSvg    = document.getElementById('elevation-profile')
+  const startDistInput = document.getElementById('start-distance-input')
 
   const overlay    = document.getElementById('route-name-overlay')
   const nameInput  = document.getElementById('route-name-input')
@@ -25,6 +31,10 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
 
   let pendingGpxText = null
   let remoteMetaMap  = new Map()
+
+  // 現在選択中ルート・開始距離（プレビュー・スライダー連動用の共有状態）
+  let currentRoute       = null
+  let startDistanceM     = 0
 
   // ── Local file load ──
   loadLocalBtn.addEventListener('click', () => fileInput.click())
@@ -143,7 +153,7 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
     try {
       await saveRoute({ name, gpxText: pendingGpxText })
       pendingGpxText = null
-      await renderList(mapView, routeListEl, profileSvg, onRouteSelected)
+      await renderList()
     } catch (err) {
       alert(`保存に失敗しました: ${err.message}`)
     }
@@ -156,67 +166,98 @@ export async function initRoutePicker(mapView, { onRouteSelected } = {}) {
     }
   })
 
-  await renderList(mapView, routeListEl, profileSvg, onRouteSelected)
-}
+  // ── 開始距離（数値入力・標高プロファイル上のドラッグ、双方向に同期） ──
 
-async function renderList(mapView, listEl, profileSvg, onRouteSelected) {
-  const routes = await listRoutes()
-  listEl.innerHTML = ''
-
-  if (routes.length === 0) {
-    listEl.innerHTML = '<p class="route-empty">保存済みのルートはありません</p>'
-    return
+  /**
+   * 状態値を更新し、プロファイル上のマーカー（と、updateInputがtrueなら
+   * 数値入力欄）に反映する。数値入力欄からの変更時はupdateInput:false にし、
+   * 入力中の値を毎キー入力で上書きして操作を妨げないようにする。
+   */
+  function setStartDistance(distM, { notify = true, updateInput = true } = {}) {
+    if (!currentRoute) return
+    const maxM = Math.max(0, currentRoute.totalDistanceM - START_DISTANCE_MARGIN_M)
+    startDistanceM = Math.max(0, Math.min(distM, maxM))
+    if (updateInput) startDistInput.value = (startDistanceM / 1000).toFixed(2)
+    renderProfile(currentRoute, profileSvg, startDistanceM, (d) => setStartDistance(d))
+    if (notify) onStartDistanceChanged?.(startDistanceM)
   }
 
-  for (const r of routes) {
-    const item = document.createElement('div')
-    item.className = 'route-item'
-    item.dataset.id = r.id
-    item.innerHTML = `
-      <div class="route-info" role="button" tabindex="0">
-        <span class="route-name">${escHtml(r.name)}</span>
-        <span class="route-meta">${fmtDist(r.totalDistanceM)} &middot; ${fmtGain(r.totalElevationGainM)}</span>
-      </div>
-      <label class="reverse-label" title="逆走モード">
-        <input type="checkbox" class="reverse-checkbox"> 逆走
-      </label>
-      <button class="route-delete-btn" aria-label="削除">✕</button>
-    `
+  startDistInput.addEventListener('input', () => {
+    const km = parseFloat(startDistInput.value)
+    setStartDistance(Number.isFinite(km) ? km * 1000 : 0, { updateInput: false })
+  })
+  // 確定時（blur）に、クランプ後の正式な値へ整形し直す
+  startDistInput.addEventListener('change', () => {
+    startDistInput.value = (startDistanceM / 1000).toFixed(2)
+  })
 
-    const reverseCheckbox = item.querySelector('.reverse-checkbox')
+  await renderList()
 
-    item.querySelector('.route-info').addEventListener('click', () => {
-      selectRoute(r, mapView, listEl, profileSvg, onRouteSelected, reverseCheckbox.checked)
-    })
+  // ── internal ──────────────────────────────────────────────────────────
 
-    reverseCheckbox.addEventListener('change', () => {
-      if (item.classList.contains('selected')) {
-        selectRoute(r, mapView, listEl, profileSvg, onRouteSelected, reverseCheckbox.checked)
-      }
-    })
+  async function renderList() {
+    const routes = await listRoutes()
+    routeListEl.innerHTML = ''
 
-    item.querySelector('.route-delete-btn').addEventListener('click', async (e) => {
-      e.stopPropagation()
-      if (!confirm(`「${r.name}」を削除しますか？`)) return
-      await deleteRoute(r.id)
-      await renderList(mapView, listEl, profileSvg, onRouteSelected)
-    })
+    if (routes.length === 0) {
+      routeListEl.innerHTML = '<p class="route-empty">保存済みのルートはありません</p>'
+      return
+    }
 
-    listEl.appendChild(item)
+    for (const r of routes) {
+      const item = document.createElement('div')
+      item.className = 'route-item'
+      item.dataset.id = r.id
+      item.innerHTML = `
+        <div class="route-info" role="button" tabindex="0">
+          <span class="route-name">${escHtml(r.name)}</span>
+          <span class="route-meta">${fmtDist(r.totalDistanceM)} &middot; ${fmtGain(r.totalElevationGainM)}</span>
+        </div>
+        <label class="reverse-label" title="逆走モード">
+          <input type="checkbox" class="reverse-checkbox"> 逆走
+        </label>
+        <button class="route-delete-btn" aria-label="削除">✕</button>
+      `
+
+      const reverseCheckbox = item.querySelector('.reverse-checkbox')
+
+      item.querySelector('.route-info').addEventListener('click', () => {
+        selectRoute(r, reverseCheckbox.checked)
+      })
+
+      reverseCheckbox.addEventListener('change', () => {
+        if (item.classList.contains('selected')) {
+          selectRoute(r, reverseCheckbox.checked)
+        }
+      })
+
+      item.querySelector('.route-delete-btn').addEventListener('click', async (e) => {
+        e.stopPropagation()
+        if (!confirm(`「${r.name}」を削除しますか？`)) return
+        await deleteRoute(r.id)
+        await renderList()
+      })
+
+      routeListEl.appendChild(item)
+    }
+  }
+
+  async function selectRoute(record, reversed = false) {
+    routeListEl.querySelectorAll('.route-item').forEach((el) => el.classList.remove('selected'))
+    routeListEl.querySelector(`[data-id="${record.id}"]`)?.classList.add('selected')
+
+    const route = Route.fromGpx(record.gpxText, { reversed })
+    mapView.setRoute(route)
+    currentRoute = route
+
+    const progress = await getRouteProgress(record.id, reversed).catch(() => null)
+    setStartDistance(progress?.distanceM ?? 0, { notify: false })
+
+    onRouteSelected?.({ route, id: record.id, name: record.name, reversed, startDistanceM })
   }
 }
 
-function selectRoute(record, mapView, listEl, profileSvg, onRouteSelected, reversed = false) {
-  listEl.querySelectorAll('.route-item').forEach((el) => el.classList.remove('selected'))
-  listEl.querySelector(`[data-id="${record.id}"]`)?.classList.add('selected')
-
-  const route = Route.fromGpx(record.gpxText, { reversed })
-  mapView.setRoute(route)
-  renderProfile(route, profileSvg)
-  onRouteSelected?.({ route, id: record.id, name: record.name, reversed })
-}
-
-function renderProfile(route, svgEl) {
+function renderProfile(route, svgEl, startDistanceM, onSeek) {
   const pts = route.points.filter((p) => p.elevationM !== null)
   if (pts.length < 2) { svgEl.innerHTML = ''; return }
 
@@ -232,13 +273,32 @@ function renderProfile(route, svgEl) {
 
   const polyPts  = pts.map((p) => `${toX(p.distanceFromStartM)},${toY(p.elevationM)}`).join(' ')
   const fillPts  = `${toX(pts[0].distanceFromStartM)},${H} ` + polyPts + ` ${toX(pts[pts.length-1].distanceFromStartM)},${H}`
+  const markerX  = toX(startDistanceM)
 
   svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`)
   svgEl.setAttribute('preserveAspectRatio', 'none')
   svgEl.innerHTML = `
     <polygon points="${fillPts}" fill="#4488ff" fill-opacity="0.2"/>
     <polyline points="${polyPts}" fill="none" stroke="#4488ff" stroke-width="1.5"/>
+    <line x1="${markerX}" y1="0" x2="${markerX}" y2="${H}" stroke="#ffb454" stroke-width="2"/>
   `
+
+  if (!onSeek) return
+  svgEl.onpointerdown = (e) => {
+    const seek = (clientX) => {
+      const rect = svgEl.getBoundingClientRect()
+      const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+      onSeek(frac * maxDist)
+    }
+    seek(e.clientX)
+    const onMove = (ev) => seek(ev.clientX)
+    const onUp   = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 }
 
 function fmtDist(m) {

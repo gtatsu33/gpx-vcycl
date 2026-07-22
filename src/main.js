@@ -16,7 +16,7 @@ import { buildWorkoutFit }           from './export/fitWriter.js'
 import { uploadToStrava }            from './strava/upload.js'
 import { saveRide, markUploaded, markUploadFailed } from './storage/rides.js'
 import { Route }                     from './domain/route.js'
-import { getRoute }                  from './storage/routes.js'
+import { getRoute, saveRouteProgress } from './storage/routes.js'
 import { precomputeBearings }        from './mapillary/bearing.js'
 import { MapillaryLookahead, ActiveIndexTracker } from './mapillary/lookahead.js'
 import { updatePhotoPanel, resetPhotoPanel } from './mapillary/panel.js'
@@ -195,6 +195,7 @@ let selectedPointsWithBearing  = null
 let selectedReversed           = false
 let selectedMapillaryLookahead = null
 let selectedMapillaryTracker   = null
+let selectedStartDistanceM     = 0
 let getLiveData              = null
 let ftmsClient      = null
 let isDummyTrainer  = () => false
@@ -216,6 +217,21 @@ function saveRouteSession() {
 function clearRouteSession() { localStorage.removeItem(ROUTE_SESSION_KEY) }
 
 window.addEventListener('beforeunload', () => { if (rideController && selectedRouteId) saveRouteSession() })
+
+// ライド終了時の共通処理（新規開始・セッション復元どちらの経路からも呼ばれる）。
+// 複数日ライド用に、そのルート（順走/逆走別）の最終到達距離をIndexedDBへ保存する。
+function handleRideFinished(summary) {
+  rideController = null
+  clearRouteSession()
+  setRidingState(false)
+  if (summary) {
+    const lastDistanceM = summary.samples.at(-1)?.distanceM
+    if (summary.routeId != null && lastDistanceM != null) {
+      saveRouteProgress(summary.routeId, selectedReversed, lastDistanceM).catch(() => {})
+    }
+    if (!isDummyTrainer()) rideEndModal.show(summary)
+  }
+}
 
 const startBtn       = document.getElementById('start-ride-btn')
 const pauseResumeBtn = document.getElementById('pause-resume-btn')
@@ -309,12 +325,8 @@ startBtn.addEventListener('click', async () => {
     ftmsClient:  trainerEnabled ? ftmsClient : null,
     mapillaryLookahead,
     mapillaryTracker,
-    onFinished: (summary) => {
-      rideController = null
-      clearRouteSession()
-      setRidingState(false)
-      if (summary && !isDummyTrainer()) rideEndModal.show(summary)
-    },
+    startDistanceM: selectedStartDistanceM,
+    onFinished: handleRideFinished,
   })
   rideController.start()
   setRidingState(true)
@@ -336,10 +348,7 @@ pauseResumeBtn.addEventListener('click', () => {
 
 stopBtn.addEventListener('click', () => {
   const summary = rideController?.stop()
-  rideController = null
-  clearRouteSession()
-  setRidingState(false)
-  if (summary && !isDummyTrainer()) rideEndModal.show(summary)
+  handleRideFinished(summary)
 })
 
 function setRidingState(riding) {
@@ -551,32 +560,50 @@ async function init() {
     onClose: () => renderRideHistory(),
   })
 
+  // 開始距離（複数日ライドの再開地点）に応じて3Dマップ・Mapillary・2Dマップの
+  // プレビューを一致させる。ルート選択直後の初期表示、および開始距離スライダー/
+  // 数値入力の変更時の両方から呼ばれる。
+  function previewAtDistance(distanceM) {
+    eleView?.previewAt(distanceM)
+    mapView.setProgress(distanceM)
+
+    const lookahead = selectedMapillaryLookahead
+    const tracker    = selectedMapillaryTracker
+    if (!lookahead || !tracker) return
+    const idx = tracker.seekTo(distanceM)
+    lookahead.seekTo(idx)
+    resetPhotoPanel()
+    lookahead.tick(idx).then(() => {
+      if (selectedMapillaryLookahead !== lookahead) return
+      const { status, image, routeBearing } = lookahead.getStateFor(idx)
+      updatePhotoPanel(status, image, routeBearing, distanceM)
+    })
+  }
+
   await initRoutePicker(mapView, {
-    onRouteSelected: ({ route, id, name, reversed = false }) => {
+    onRouteSelected: ({ route, id, name, reversed = false, startDistanceM = 0 }) => {
       selectedRoute             = route
       selectedRouteId           = id
       selectedRouteName         = name
       selectedReversed          = reversed
+      selectedStartDistanceM    = startDistanceM
       selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(route.points) : null
       startBtn.disabled = false
       eleView?.setRoute(route)
 
-      // ルート選択時に1枚目をプレビュー表示
       selectedMapillaryLookahead = null
       selectedMapillaryTracker   = null
       if (mapillaryUsable && selectedPointsWithBearing && id != null) {
         const cachePrefix = `${id}:${reversed ? 'r' : 'f'}`
-        const lookahead   = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
-        selectedMapillaryLookahead = lookahead
+        selectedMapillaryLookahead = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
         selectedMapillaryTracker   = new ActiveIndexTracker(selectedPointsWithBearing)
-        resetPhotoPanel()
-        // tick(0) の完了後にパネルを更新（ルートが切り替わっていたら無視）
-        lookahead.tick(0).then(() => {
-          if (selectedMapillaryLookahead !== lookahead) return
-          const { status, image, routeBearing } = lookahead.getStateFor(0)
-          updatePhotoPanel(status, image, routeBearing, 0)
-        })
       }
+
+      previewAtDistance(selectedStartDistanceM)
+    },
+    onStartDistanceChanged: (distanceM) => {
+      selectedStartDistanceM = distanceM
+      previewAtDistance(distanceM)
     },
   })
 
@@ -627,12 +654,7 @@ async function init() {
           ftmsClient: trainerEnabled ? ftmsClient : null,
           mapillaryLookahead,
           mapillaryTracker,
-          onFinished: (summary) => {
-            rideController = null
-            clearRouteSession()
-            setRidingState(false)
-            if (summary && !isDummyTrainer()) rideEndModal.show(summary)
-          },
+          onFinished: handleRideFinished,
         })
         rideController.restoreFrom(routeSession)
 

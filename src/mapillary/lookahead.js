@@ -19,6 +19,17 @@ export class ActiveIndexTracker {
     }
     return this.#activeIndex
   }
+
+  /** 開始距離の変更（複数日ライドの開始点選択など）で任意距離へ飛ぶ。前後どちらへも移動可。 */
+  seekTo(currentDistanceM) {
+    let idx = 0
+    for (let i = 0; i < this.#points.length - 1; i++) {
+      if (currentDistanceM >= this.#points[i + 1].distanceFromStartM - 25) idx = i + 1
+      else break
+    }
+    this.#activeIndex = idx
+    return idx
+  }
 }
 
 export class MapillaryLookahead {
@@ -72,5 +83,13 @@ export class MapillaryLookahead {
 
   getStateFor(index) {
     return this.#buffer.get(index) ?? { status: 'pending', image: null, routeBearing: null }
+  }
+
+  /** 開始距離の変更で任意のindexへ飛ぶ。#nextFetchIndexをそこから再開させ、
+   *  無関係になった先読みバッファ・連続性ボーナスをクリアする。 */
+  seekTo(activeIndex) {
+    this.#nextFetchIndex   = activeIndex
+    this.#buffer.clear()
+    this.#activeSequenceId = null
   }
 }

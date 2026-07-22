@@ -217,8 +217,18 @@
       width: 100%; flex-shrink: 0;
       background: #0a0c10; border-radius: 4px;
     }
-    #elevation-profile { height: 52px; }
+    #elevation-profile { height: 52px; cursor: pointer; touch-action: none; }
     #gradient-profile  { height: clamp(48px, 10dvh, 90px); flex-shrink: 1; min-height: 48px; }
+    #start-distance-row {
+      display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0;
+      font-size: 0.78rem; color: #ccd8e4;
+    }
+    #start-distance-row input {
+      width: 4.5rem; flex: none; padding: 0.3rem 0.5rem;
+      background: #0a0c10; border: 1px solid #2c4055;
+      border-radius: 6px; color: #ccd8e4; font-size: 0.85rem; text-align: right;
+    }
+    #start-distance-row input:focus { outline: none; border-color: #38bdf8; }
     #start-ride-btn { flex-shrink: 0; }
 
     /* Workout tab の .hud-item/.hud-grid はここで共用定義（Routeの新HUDは .rhud-* を使用） */
@@ -741,6 +751,11 @@
           </div>
           <div id="route-list"></div>
           <svg id="elevation-profile"></svg>
+          <div id="start-distance-row">
+            <label for="start-distance-input">開始距離</label>
+            <input type="number" id="start-distance-input" min="0" step="0.1" value="0.00">
+            <span>km</span>
+          </div>
           <button id="start-ride-btn" disabled>▶ ライドを開始</button>
         </div>
       </div><!-- #route-side-panel -->

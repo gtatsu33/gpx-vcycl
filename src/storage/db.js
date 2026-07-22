@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'virtualCycling'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 /** @type {import('idb').IDBPDatabase | null} */
 let db = null
@@ -30,6 +30,11 @@ export async function initDb() {
       }
       if (oldVersion < 3) {
         database.createObjectStore('mapillaryCache')
+      }
+      if (oldVersion < 4) {
+        // routeProgress: 複数日ライド用の最終到達距離
+        // key: `${routeId}:${reversed?'r':'f'}`, value: { distanceM, updatedAt }
+        database.createObjectStore('routeProgress')
       }
     },
   })

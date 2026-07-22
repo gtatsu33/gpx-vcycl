@@ -43,6 +43,9 @@ export class RideController {
   #mapillaryLookahead = null
   #mapillaryTracker   = null
 
+  // 複数日ライド: 開始距離（ルート選択画面で指定）
+  #startDistanceM = 0
+
   // Callbacks
   #onFinished = null
 
@@ -61,6 +64,7 @@ export class RideController {
    *   gradientUpdateIntervalMs?: number,
    *   mapillaryLookahead?:      import('../mapillary/lookahead.js').MapillaryLookahead,
    *   mapillaryTracker?:        import('../mapillary/lookahead.js').ActiveIndexTracker,
+   *   startDistanceM?:          number,
    * }} options
    */
   constructor({
@@ -75,6 +79,7 @@ export class RideController {
     altitudeEffectEnabled    = true,
     mapillaryLookahead       = null,
     mapillaryTracker         = null,
+    startDistanceM           = 0,
   }) {
     this.#simulator              = new RideSimulator(route, params)
     this.#simulator.altitudeEffectEnabled = altitudeEffectEnabled
@@ -94,6 +99,7 @@ export class RideController {
     this.#mapillaryLookahead     = mapillaryLookahead
     this.#mapillaryTracker       = mapillaryTracker
     this.#gradientUpdateIntervalMs = gradientUpdateIntervalMs
+    this.#startDistanceM         = startDistanceM
 
     if (ftmsClient) {
       // windResistanceCoef [kg/m] = ρ/2 * CdA
@@ -112,6 +118,12 @@ export class RideController {
     this.#samples      = []
     this.#lastSampleAt = now - SAMPLE_INTERVAL_MS
     this.#lastTickAt   = now
+    if (this.#startDistanceM > 0) {
+      // restoreSimStateはpaused=trueにするため、直後にresume()し直す
+      this.#simulator.restoreSimState({
+        distanceM: this.#startDistanceM, velocityMs: 0, elapsedSec: 0, elevationGainM: 0,
+      })
+    }
     this.#simulator.resume()
     this.#intervalId = setInterval(() => this.#tick(), TICK_MS)
   }
