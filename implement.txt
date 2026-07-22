@@ -1044,9 +1044,15 @@ constants.js に集約する。
       （#inFlightで同時1件に制限）。activeIndex-1より古いバッファは
       破棄。#activeSequenceIdを跨ぎ保持し継続性ボーナスへ利用。
       getStateFor(index) → 未取得時は{status:'pending', image:null,
-      routeBearing:null}。
+      routeBearing:null}。resolveImageForPointの解決直後に
+      panel.jsのpreloadImage(thumb_1024_url)を呼び、表示（activeIndex
+      到達）より前にブラウザへ画像バイトを先読みさせる（切り替え時の
+      黒画防止）。
 
   panel.js:
+    preloadImage(url) — new Image()にurlを割り当てるだけの先読み
+      ヘルパー。lookahead.jsのtick()から、画像が先読みバッファに
+      入った時点（表示のおよそ300m/lookaheadPoints分前）で呼ばれる。
     updatePhotoPanel(status, image, routeBearing=null, distanceM=null)
       — status==='pending'は無視（チラつき防止）。画像なしは
       "No Image"。表示直前の再チェックとしてDISPLAY_MAX_DIFF_DEG=25

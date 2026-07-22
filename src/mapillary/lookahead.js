@@ -1,4 +1,5 @@
 import { resolveImageForPoint } from './cache.js'
+import { preloadImage }         from './panel.js'
 
 export class ActiveIndexTracker {
   #points
@@ -58,6 +59,7 @@ export class MapillaryLookahead {
     try {
       const best = await resolveImageForPoint(this.#cachePrefix, idx, pt, this.#activeSequenceId)
       if (best?.sequence_id) this.#activeSequenceId = best.sequence_id
+      preloadImage(best?.thumb_1024_url)
       this.#buffer.set(idx, { status: 'done', image: best, routeBearing: pt.bearing })
       console.debug(`[Mapillary] idx=${idx} → ${best ? `id=${best.id} seq=${best.sequence_id}` : 'no image'}`)
     } catch (e) {

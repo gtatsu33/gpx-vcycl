@@ -18,6 +18,17 @@ function panoImgStyle(compassAngle, routeBearing) {
   return `width:100%;height:100%;object-fit:cover;transform:scale(2);transform-origin:${originX.toFixed(0)}% 50%`
 }
 
+/**
+ * 表示に使う前に画像バイトをブラウザキャッシュへ先読みしておく。
+ * 先読みなしだと切り替え時に<img>挿入後にダウンロードが始まり、
+ * 完了までパネル背景色（黒）が見えてしまう。
+ */
+export function preloadImage(url) {
+  if (!url) return
+  const img = new Image()
+  img.src = url
+}
+
 export function updatePhotoPanel(status, image, routeBearing = null, distanceM = null) {
   const panel = document.getElementById(PANEL_ID)
   if (!panel) return
