@@ -150,7 +150,7 @@ export class RideController {
     this.#intervalId = null
     this.#simulator.reset()
     this.#paused = false
-    resetPhotoPanel()
+    if (this.#mapillaryLookahead) resetPhotoPanel()
 
     if (this.#ftmsClient?.isControllable) {
       this.#ftmsClient.reset().catch((err) => console.warn('FTMS reset failed:', err))
