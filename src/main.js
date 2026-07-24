@@ -18,6 +18,7 @@ import { saveRide, markUploaded, markUploadFailed } from './storage/rides.js'
 import { Route }                     from './domain/route.js'
 import { getRoute, saveRouteProgress } from './storage/routes.js'
 import { precomputeBearings }        from './mapillary/bearing.js'
+import { resampleRoute }             from './mapillary/resample.js'
 import { MapillaryLookahead, ActiveIndexTracker } from './mapillary/lookahead.js'
 import { updatePhotoPanel, resetPhotoPanel } from './mapillary/panel.js'
 import { sendMagicLink, verifyOtp, getSession, onAuthStateChange, signOut as supabaseSignOut }
@@ -196,6 +197,7 @@ let selectedReversed           = false
 let selectedMapillaryLookahead = null
 let selectedMapillaryTracker   = null
 let selectedStartDistanceM     = 0
+let routePickerApi             = null
 let getLiveData              = null
 let ftmsClient      = null
 let isDummyTrainer  = () => false
@@ -228,6 +230,15 @@ function handleRideFinished(summary) {
     const lastDistanceM = summary.samples.at(-1)?.distanceM
     if (summary.routeId != null && lastDistanceM != null) {
       saveRouteProgress(summary.routeId, selectedReversed, lastDistanceM).catch(() => {})
+      // 事前ライド画面（開始距離スライダー・3D/2Dマップ・Mapillary先読み）を
+      // 今回のライドの到達距離に合わせて再同期する。これをしないと、次にライドを
+      // 開始した際、開始距離表示は0のまま、かつmapillaryLookahead/Trackerが
+      // 前回ライド終了時点のindexに取り残されたまま流用されてしまう。
+      if (summary.routeId === selectedRouteId) {
+        selectedStartDistanceM = lastDistanceM
+        routePickerApi?.syncStartDistance(lastDistanceM)
+        previewAtDistance(lastDistanceM)
+      }
     }
     if (!isDummyTrainer()) rideEndModal.show(summary)
   }
@@ -575,19 +586,19 @@ async function init() {
     resetPhotoPanel()
     lookahead.tick(idx).then(() => {
       if (selectedMapillaryLookahead !== lookahead) return
-      const { status, image, routeBearing } = lookahead.getStateFor(idx)
-      updatePhotoPanel(status, image, routeBearing, distanceM)
+      const { status, image, routeBearing, reason } = lookahead.getStateFor(idx)
+      updatePhotoPanel(status, image, routeBearing, distanceM, reason)
     })
   }
 
-  await initRoutePicker(mapView, {
+  routePickerApi = await initRoutePicker(mapView, {
     onRouteSelected: ({ route, id, name, reversed = false, startDistanceM = 0 }) => {
       selectedRoute             = route
       selectedRouteId           = id
       selectedRouteName         = name
       selectedReversed          = reversed
       selectedStartDistanceM    = startDistanceM
-      selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(route.points) : null
+      selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(resampleRoute(route)) : null
       startBtn.disabled = false
       eleView?.setRoute(route)
 
@@ -635,7 +646,7 @@ async function init() {
         selectedRouteId           = routeSession.routeId
         selectedRouteName         = routeSession.routeName
         selectedReversed          = false // セッション復元時は逆走フラグを保持しないため forward 扱い
-        selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(route.points) : null
+        selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(resampleRoute(route)) : null
         startBtn.disabled = false
         eleView?.setRoute(route)
 

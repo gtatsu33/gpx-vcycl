@@ -255,8 +255,8 @@ export class RideController {
     if (this.#mapillaryTracker && this.#mapillaryLookahead) {
       const activeIdx = this.#mapillaryTracker.update(state.distanceM)
       this.#mapillaryLookahead.tick(activeIdx) // 非同期・await不要
-      const { status, image, routeBearing } = this.#mapillaryLookahead.getStateFor(activeIdx)
-      updatePhotoPanel(status, image, routeBearing, state.distanceM)
+      const { status, image, routeBearing, reason } = this.#mapillaryLookahead.getStateFor(activeIdx)
+      updatePhotoPanel(status, image, routeBearing, state.distanceM, reason)
     }
 
     // 勾配をトレーナーへ送信（1秒ごと、または±1%急変時は即送信）

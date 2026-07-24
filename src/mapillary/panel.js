@@ -2,8 +2,14 @@ import { effectiveAngle } from './score.js'
 
 const PANEL_ID = 'mapillary-panel'
 // キャッシュ選択は45°以内だが、表示はより厳しい閾値を適用する。
-// 25°超の写真は道が斜め〜横向きに見えるためNo Imageを表示する。
+// 25°超の写真は道が斜め〜横向きに見えるためNo Matching Angleを表示する。
 const DISPLAY_MAX_DIFF_DEG = 25
+
+const REASON_MESSAGES = {
+  'fetch-error':          'Failed to Load Photo',
+  'no-candidates':        'No Photos Nearby',
+  'no-viable-candidate':  'No Matching Angle',
+}
 
 /**
  * パノラマ（equirectangular）画像を、ルートの進行方向が中心に来るよう
@@ -29,7 +35,7 @@ export function preloadImage(url) {
   img.src = url
 }
 
-export function updatePhotoPanel(status, image, routeBearing = null, distanceM = null) {
+export function updatePhotoPanel(status, image, routeBearing = null, distanceM = null, reason = null) {
   const panel = document.getElementById(PANEL_ID)
   if (!panel) return
 
@@ -40,7 +46,7 @@ export function updatePhotoPanel(status, image, routeBearing = null, distanceM =
   if (!image) {
     panel.hidden = false
     panel.dataset.imageId = ''
-    panel.innerHTML = '<span class="mapillary-no-image">No Image</span>'
+    panel.innerHTML = `<span class="mapillary-no-image">${REASON_MESSAGES[reason] ?? 'No Photos Nearby'}</span>`
     return
   }
 
@@ -48,7 +54,7 @@ export function updatePhotoPanel(status, image, routeBearing = null, distanceM =
 
   panel.dataset.imageId = String(image.id)
 
-  // 表示閾値チェック: 選択済みでも角度が大きすぎる写真はNo Imageにする
+  // 表示閾値チェック: 選択済みでも角度が大きすぎる写真はNo Matching Angleにする
   const angle = effectiveAngle(image)
   const angleSrc = image.computed_compass_angle != null ? 'cmp' : 'raw'
   if (routeBearing !== null) {
@@ -59,7 +65,7 @@ export function updatePhotoPanel(status, image, routeBearing = null, distanceM =
         `[Mapillary] suppressed ${distTag} id=${image.id} road=${routeBearing.toFixed(1)}° photo=${angle?.toFixed(1)}°(${angleSrc}) diff=${diff.toFixed(1)}° > ${DISPLAY_MAX_DIFF_DEG}°`
       )
       panel.hidden = false
-      panel.innerHTML = '<span class="mapillary-no-image">No Image</span>'
+      panel.innerHTML = `<span class="mapillary-no-image">${REASON_MESSAGES['no-viable-candidate']}</span>`
       return
     }
   }

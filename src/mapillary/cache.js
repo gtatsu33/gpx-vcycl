@@ -1,12 +1,13 @@
 import { getDb }              from '../storage/db.js'
 import { fetchCandidateImages, fetchThumbUrl } from './api.js'
 import { selectBest }         from './score.js'
+import { haversineM }         from '../domain/gpxParser.js'
 
 const STALE_MS = 90 * 24 * 60 * 60 * 1000
 
 // スコアリング・表示ロジックを変更したときはここを上げる。
 // バージョン不一致のキャッシュエントリは自動的に再フェッチされる。
-const CACHE_VERSION = 7
+const CACHE_VERSION = 11
 
 function isStale(entry) {
   return (
@@ -33,23 +34,30 @@ async function cacheSet(key, value) {
  * @param {string} cachePrefix  `${routeId}:f` または `${routeId}:r`
  * @param {number} idx          points 配列内のインデックス
  * @param {object} point        { lat, lon, bearing, ... }
+ * @param {string|null} activeSequenceId
+ * @param {{lat: number, lon: number}|null} lastImagePosition  直前に選ばれた画像の実座標
+ * @returns {Promise<{image: object|null, reason: 'no-candidates'|'no-viable-candidate'|null}>}
+ *   image===nullのとき、reasonが理由を示す（fetch失敗はここでは投げっぱなしにし、
+ *   呼び出し元のlookahead.js側でcatchして'fetch-error'として扱う）。
  */
-export async function resolveImageForPoint(cachePrefix, idx, point, activeSequenceId = null) {
+export async function resolveImageForPoint(cachePrefix, idx, point, activeSequenceId = null, lastImagePosition = null) {
   const key    = `${cachePrefix}::${idx}`
   const cached = await cacheGet(key)
 
   if (cached && !isStale(cached)) {
-    if (cached.image === null) return null
+    if (cached.image === null) return { image: null, reason: cached.reason ?? 'no-viable-candidate' }
     const fresh = await fetchThumbUrl(cached.image.id)
-    return { ...cached.image, thumb_1024_url: fresh.thumb_1024_url }
+    return { image: { ...cached.image, thumb_1024_url: fresh.thumb_1024_url }, reason: null }
   }
 
   const candidates = await fetchCandidateImages(point)
-  const best = selectBest(candidates, point.bearing, activeSequenceId)
+  const best   = selectBest(candidates, point, activeSequenceId, haversineM, lastImagePosition)
+  const reason = best ? null : (candidates.length === 0 ? 'no-candidates' : 'no-viable-candidate')
   await cacheSet(key, {
     v:        CACHE_VERSION,
     image:    best ? stripUrl(best) : null,
+    reason,
     cachedAt: Date.now(),
   })
-  return best
+  return { image: best, reason }
 }

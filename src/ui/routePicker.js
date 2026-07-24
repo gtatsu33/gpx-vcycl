@@ -10,6 +10,7 @@ const START_DISTANCE_MARGIN_M = 50 // ルート終端ぎりぎりを開始距離
  *   onRouteSelected?:        (args: { route, id, name, reversed, startDistanceM: number }) => void,
  *   onStartDistanceChanged?: (startDistanceM: number) => void,
  * }} [opts]
+ * @returns {Promise<{ syncStartDistance: (distanceM: number) => void }>}
  */
 export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanceChanged } = {}) {
   const loadLocalBtn  = document.getElementById('load-local-gpx-btn')
@@ -254,6 +255,13 @@ export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanc
     setStartDistance(progress?.distanceM ?? 0, { notify: false })
 
     onRouteSelected?.({ route, id: record.id, name: record.name, reversed, startDistanceM })
+  }
+
+  return {
+    /** ライド終了などで開始距離の基準が変わった際に、プロファイル表示・数値入力欄を再同期する。 */
+    syncStartDistance(distanceM) {
+      setStartDistance(distanceM, { notify: false })
+    },
   }
 }
 

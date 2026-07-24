@@ -160,6 +160,7 @@
   │   │
   │   ├── mapillary/                 # 実写風景写真ルックアヘッド機能
   │   │   ├── api.js                 # 外部API呼び出し
+  │   │   ├── resample.js            # ルートの等間隔（既定20m）リサンプル
   │   │   ├── bearing.js             # ルート進行方位の事前計算
   │   │   ├── score.js               # 候補画像のスコアリング・選定
   │   │   ├── cache.js               # IndexedDBキャッシュ
@@ -280,6 +281,17 @@ Vite はクライアントに公開する環境変数に VITE_ プレフィッ�
       到達距離（summary.samples.at(-1).distanceM）を無条件で上書き保存する。
       ブラウザのサイトデータ削除で消えても実害は「初期値が0に戻る」のみ
       （事前ライド画面の開始距離欄に手動入力すれば引き続き再開できる）。
+      保存と同時に、終了したライドのrouteIdが現在選択中のselectedRouteIdと
+      一致する場合、selectedStartDistanceMをlastDistanceMへ更新し、
+      routePicker.jsのsyncStartDistance(lastDistanceM)（開始距離欄・
+      標高プロファイルのマーカー再描画。notify:falseでonStartDistanceChanged
+      は呼ばない）とmain.jsのpreviewAtDistance(lastDistanceM)（3D/2Dマップ・
+      ActiveIndexTracker.seekTo/MapillaryLookahead.seekToによる先読み状態の
+      再同期）を呼ぶ。これを怠ると、事前ライド画面に戻った際の開始距離表示が
+      0のまま更新されず、かつselectedMapillaryLookahead/Trackerが前回ライド
+      終了時点のindexに取り残されたまま次のライドへ流用され、Mapillary写真が
+      新しい開始距離（0など）に追従せず前回終了時点の写真のまま固定される
+      不具合があった（修正済み）。
 
 ────────────────────────────────────────
 5-2. rides ストア（レコード形状）
@@ -1041,59 +1053,115 @@ constants.js に集約する。
 11. 実写風景写真（src/mapillary/）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+  resample.js:
+    resampleRoute(route, intervalM=20) — route.totalDistanceMを
+      intervalM刻みで走査し、route.getPositionAt(d)で{lat,lon,
+      distanceFromStartM}を生成する等間隔点列。GPXの生trkpt密度
+      （直線区間ほどtrkptが疎になりがち）に依存させないため、Mapillary
+      の先読み・シーケンス選定はこの出力のみを使う（3Dマップ・勾配計算
+      等は従来通りroute.pointsを使用）。ルート選択時に1回だけ一括計算
+      （数万点でも数ms・数MB程度でメモリ・速度とも問題にならないため、
+      ライド中の逐次計算は行わない）。
+
   api.js:
-    fetchCandidateImages(point) — {lat,lon}中心に半幅35m
-      （bboxFromPoint）のbboxでGraph API `/images` をGET
-      （fields: id, compass_angle, computed_compass_angle, is_pano,
-      sequence_id, quality_score, captured_at, thumb_1024_url, creator。
-      limit=40）。トークンはVITE_MAPILLARY_TOKEN。
+    fetchCandidateImages(point) — {lat,lon}中心にGraph API `/images` を
+      `lat`/`lng`/`radius`パラメータ（半径検索、SEARCH_RADIUS_M=35m、
+      limit=100）でGET（fields: id, compass_angle,
+      computed_compass_angle, geometry, computed_geometry, is_pano,
+      sequence, quality_score, captured_at, thumb_1024_url, creator）。
+      トークンはVITE_MAPILLARY_TOKEN。
+      ※以前は`bbox`パラメータ（半幅35mの矩形）を使用していたが、実測で
+      同一bbox・同一fieldsに対して同じリクエストを繰り返しても件数が
+      毎回大きく異なる（例: 5回で1,0,0,0,7件）という重大な揺らぎを確認。
+      `lat`/`lng`/`radius`方式に切り替えたところ、同一条件で5回とも
+      完全に同じ結果（50件、gtatsu33件数13件で固定）となり、揺らぎが
+      解消することを確認して採用（`bbox`と`lat`/`lng`/`radius`は
+      Graph API仕様上併用不可）。`limit=100`を指定しても実際には50件
+      までしか返らない（ドキュメント上のmax=100とは異なる実挙動）。
+      ※シーケンスIDのフィールド名は`sequence`が正式名称（`sequence_id`
+      は存在しない名前で、fields指定してもAPIに黙って無視され、常に
+      undefinedになる。実データダンプで確認済みの既知バグを修正済み）。
     fetchThumbUrl(imageId) — サムネイルURLは長期キャッシュ不可のため、
       表示直前に単体エンティティを再取得して新鮮なURLを得る。
 
   bearing.js:
     precomputeBearings(points, window=2) — 各点に前後window点を使った
       大圏方位角(bearing)を付与。逆走時は反転済みpoint配列に対して
-      呼ぶこと。
+      呼ぶこと。resample.jsの出力に対して適用する。
 
   score.js:
     effectiveAngle(image) — computed_compass_angle優先、なければ
       compass_angle。
-    selectBest(images, routeBearing, activeSequenceId=null) —
-      角度差>45°は除外(score=-1)。パノラマは
-      `35 - diff×0.2 + quality×20 + recency`、通常写真は
-      `50 - diff×0.3 + quality×20 + recency` を基礎スコアとし、
-      activeSequenceId一致で+15（SEQUENCE_BONUS、直前と同じ撮影
-      シーケンスの継続を優先）。最高スコアの1件を返す（無ければnull）。
+    effectiveGeometry(image) — computed_geometry優先、なければ
+      geometry。GeoJSON Point([lon,lat])を{lat,lon}へ変換して返す
+      （どちらも欠損時はnull）。
+    isBehind(lastPos, candidatePos, bearingDeg)（非export）— lastPos→
+      candidatePosのベクトルをbearingDeg方向へ平面近似で射影し、進行方向の
+      負成分（後方）がBACKWARD_TOLERANCE_M=3mを超えるかを判定する。
+    selectBest(images, point, activeSequenceId=null, haversineM,
+      lastImagePosition=null) —
+      pointは{lat,lon,bearing}。角度差>45°は除外(score=-1)。さらに、
+      activeSequenceId継続中（image.sequence===activeSequenceId）かつ
+      lastImagePositionが与えられている場合、そのシーケンス内で
+      lastImagePositionより進行方向後方にある候補も除外(score=-1)する
+      （シーケンス内の巻き戻り＝写真が逆走して見える現象の防止）。
+      残った候補についてパノラマは`35 - diff×0.2 + quality×20 + recency`、
+      通常写真は`50 - diff×0.3 + quality×20 + recency` を基礎スコアとし、
+      distanceScore = max(0, 40 - 候補実座標までのhaversine距離[m])×0.5
+      （0mで+20、40m以遠で+0、bbox半幅35mの対角付近で効かなくなる）と
+      image.sequence===activeSequenceId時+20（SEQUENCE_BONUS、直前と
+      同じ撮影シーケンスの継続を優先。15→20に強化）を加算。
+      最高スコアの1件を返す（無ければnull）。
 
   cache.js:
-    IndexedDB `mapillaryCache` ストア(KV)。CACHE_VERSION=7,
-    STALE_MS=90日。
-    resolveImageForPoint(cachePrefix, idx, point, activeSequenceId) —
-      キー `${cachePrefix}::${idx}`。有効キャッシュがあれば
-      サムネイルURLのみ再取得して返す（stripUrl）。無ければ
-      fetchCandidateImages+selectBestを実行しキャッシュへ保存。
+    IndexedDB `mapillaryCache` ストア(KV)。CACHE_VERSION=11（sequence
+      フィールド名修正・距離スコア・巻き戻り防止・bbox→radius方式への
+      切り替えの導入に伴い更新、旧バージョンのキャッシュエントリは
+      isStale()判定で自動的に再フェッチされる）。STALE_MS=90日。
+    resolveImageForPoint(cachePrefix, idx, point, activeSequenceId,
+      lastImagePosition) —
+      戻り値は{image, reason}。キー `${cachePrefix}::${idx}`。
+      有効キャッシュがあれば画像ありはサムネイルURLのみ再取得して返す
+      （stripUrl）、画像なしはキャッシュ済みのreasonをそのまま返す
+      （この場合、activeSequenceId・lastImagePositionによる再評価は
+      行わない＝キャッシュヒット時は初回選定時の状態のまま）。
+      無ければfetchCandidateImages+selectBest(candidates, point,
+      activeSequenceId, haversineM, lastImagePosition)を実行し、reason=
+      候補0件なら'no-candidates'、候補はあるが全REJECTなら
+      'no-viable-candidate'、選定できたならnullとしてキャッシュへ保存。
+      fetch自体の例外はここでは捕捉せず、呼び出し元
+      （lookahead.js tick()）に伝播させる。
 
   lookahead.js:
+    PRE_TRIGGER_M=8 — resample.jsの等間隔点列（既定20m間隔）に対し、
+      間隔より十分小さいマージンを使うことで1tickでactiveIndexが
+      2つ以上進まないようにする（旧実装は生trkpt向けの25m固定値
+      だったが、20m間隔だと超過してしまうため縮小）。
     class ActiveIndexTracker(points) — update(currentDistanceM)で、
-      次点のdistanceFromStartM-25mを現在距離が超えたら単調に
-      activeIndexを進める（25m手前倒しトリガー、ライド中の毎tickで使用）。
+      次点のdistanceFromStartM-PRE_TRIGGER_Mを現在距離が超えたら単調に
+      activeIndexを進める（ライド中の毎tickで使用）。
       seekTo(currentDistanceM) — 開始距離の選択・変更（複数日ライド）で
       任意距離へ前後どちらへも飛ぶための版。0から線形探索し直すため
       update()と違い逆方向の移動にも対応する。
-    class MapillaryLookahead(cachePrefix, points, lookaheadPoints=6) —
-      Map<index,{status,image,routeBearing}>のバッファを持ち、
+    class MapillaryLookahead(cachePrefix, points, lookaheadPoints=12) —
+      Map<index,{status,image,routeBearing,reason}>のバッファを持ち、
       tick(activeIndex)でactiveIndex+lookaheadPoints
-      （既定6点≈想定50m間隔で約300m先）まで1件ずつ先読み取得
+      （既定12点×20m間隔で約240m先）まで1件ずつ先読み取得
       （#inFlightで同時1件に制限）。activeIndex-1より古いバッファは
-      破棄。#activeSequenceIdを跨ぎ保持し継続性ボーナスへ利用。
+      破棄。#activeSequenceId・#lastImagePositionを跨ぎ保持し、
+      継続性ボーナス・巻き戻り防止の両方に利用（resolveImageForPointが
+      返すimage.sequence / effectiveGeometry(image)で都度更新）。
+      resolveImageForPointが例外を投げた場合（フェッチ失敗）は
+      catchしてstatus='error', reason='fetch-error'として保存。
       getStateFor(index) → 未取得時は{status:'pending', image:null,
-      routeBearing:null}。resolveImageForPointの解決直後に
+      routeBearing:null, reason:null}。resolveImageForPointの解決直後に
       panel.jsのpreloadImage(thumb_1024_url)を呼び、表示（activeIndex
       到達）より前にブラウザへ画像バイトを先読みさせる（切り替え時の
       黒画防止）。
       seekTo(activeIndex) — 開始距離の変更でActiveIndexTracker.seekTo()と
       対にして呼ぶ。#nextFetchIndexをそのindexへ飛ばし、無関係になった
-      #bufferとACTIVEシーケンスIDをクリアする（そうしないと
+      #buffer・#activeSequenceId・#lastImagePositionをクリアする
+      （そうしないと
       #nextFetchIndexが0から1件ずつ大きくジャンプ先まで追いつくのに
       非常に時間がかかる）。
 
@@ -1101,19 +1169,26 @@ constants.js に集約する。
     preloadImage(url) — new Image()にurlを割り当てるだけの先読み
       ヘルパー。lookahead.jsのtick()から、画像が先読みバッファに
       入った時点（表示のおよそ300m/lookaheadPoints分前）で呼ばれる。
-    updatePhotoPanel(status, image, routeBearing=null, distanceM=null)
-      — status==='pending'は無視（チラつき防止）。画像なしは
-      "No Image"。表示直前の再チェックとしてDISPLAY_MAX_DIFF_DEG=25
-      （キャッシュ選定時の45°より厳しい）を超えたら"No Image"に
-      フォールバック。パノラマはtransform-origin＋2倍ズームで
-      routeBearing方向を画面中央にクロップ。撮影者クレジット
-      「© {username} / Mapillary」を表示。
-    resetPhotoPanel() — プレースホルダーに戻す。
+    REASON_MESSAGES — reason文字列から表示テキストへのマップ:
+      'fetch-error' → "Failed to Load Photo"（API通信失敗）、
+      'no-candidates' → "No Photos Nearby"（bbox内に候補が0件）、
+      'no-viable-candidate' → "No Matching Angle"（候補はあるが
+      全て角度差>45°でREJECT、または選定済みでも表示直前の25°
+      再チェックで弾かれた場合の両方をこの1文言に統一）。
+    updatePhotoPanel(status, image, routeBearing=null, distanceM=null,
+      reason=null) — status==='pending'は無視（チラつき防止）。画像
+      なしはREASON_MESSAGES[reason]を表示（未知reason時のfallbackは
+      "No Photos Nearby"）。表示直前の再チェックとして
+      DISPLAY_MAX_DIFF_DEG=25（キャッシュ選定時の45°より厳しい）を
+      超えたら"No Matching Angle"にフォールバック。パノラマは
+      transform-origin＋2倍ズームでrouteBearing方向を画面中央に
+      クロップ。撮影者クレジット「© {username} / Mapillary」を表示。
+    resetPhotoPanel() — プレースホルダー（"No Image"固定文言）に戻す。
 
   end-to-end フロー（main.jsのonRouteSelectedコールバック～
   rideController.js #tick、両者にまたがる）:
     ルート選択時: MAPILLARY_ENABLED（VITE_MAPILLARY_TOKEN有無）が
-      trueなら precomputeBearings(route.points) を1回実行、
+      trueなら precomputeBearings(resampleRoute(route)) を1回実行、
       cachePrefix = `${routeId}:${reversed?'r':'f'}` で
       MapillaryLookahead/ActiveIndexTrackerを構築（この時点ではまだ
       tickしない）。main.jsのpreviewAtDistance(selectedStartDistanceM)が
@@ -1125,7 +1200,8 @@ constants.js に集約する。
     ライド中: rideController.js #tick 内で
       tracker.update(distanceM)→activeIdx、
       lookahead.tick(activeIdx)（非同期）、
-      lookahead.getStateFor(activeIdx) を updatePhotoPanel に渡す。
+      lookahead.getStateFor(activeIdx)（reason含む）を updatePhotoPanel
+      に渡す。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
