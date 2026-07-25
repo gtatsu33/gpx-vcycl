@@ -217,6 +217,43 @@ function clearRouteSession() { localStorage.removeItem(ROUTE_SESSION_KEY) }
 
 window.addEventListener('beforeunload', () => { if (rideController && selectedRouteId) saveRouteSession() })
 
+// 開始距離（複数日ライドの再開地点）に応じて3Dマップ・Mapillary・2Dマップの
+// プレビューを一致させる。ルート選択直後の初期表示、開始距離の確定時
+// （ドラッグのpointerup／数値入力のchange）、ライド終了時（再開地点の
+// 再同期）から呼ばれる、Mapillary写真取得を含むフル同期。withPhoto:false
+// の場合は3D/2Dマップ・標高プロファイルのみの軽量なライブ更新（ドラッグ中・
+// 入力中に連続発火しても問題ない）。
+//
+// 【2026-07-25修正】以前はドラッグ中の毎pointermoveでMapillary写真取得まで
+// 行っていたため、MapillaryLookahead.tick()の同時1件制限により、ドラッグ
+// 開始直後の取得だけが最後に完了して確定位置と異なる写真が表示される
+// 不具合があった。写真取得は確定時（onStartDistanceCommitted）のみに限定
+// することで解消した。
+//
+// 【2026-07-25修正・その2】以前はinit()内のローカル関数だったため、
+// モジュールトップレベルのhandleRideFinished()から参照するとスコープ外
+// でReferenceErrorになっていた（ライド終了時にNo Imageのまま固まって
+// 見えた本当の原因はこちら）。mapView/eleView/selectedMapillaryLookahead/
+// selectedMapillaryTrackerはすべてモジュールトップレベルのlet変数なので、
+// この関数自体もモジュールトップレベルへ移動して解消した。
+function previewAtDistance(distanceM, { withPhoto = true } = {}) {
+  eleView?.previewAt(distanceM)
+  mapView.setProgress(distanceM)
+  if (!withPhoto) return
+
+  const lookahead = selectedMapillaryLookahead
+  const tracker    = selectedMapillaryTracker
+  if (!lookahead || !tracker) return
+  const idx = tracker.seekTo(distanceM)
+  lookahead.seekTo(idx)
+  resetPhotoPanel()
+  lookahead.tick(idx).then(() => {
+    if (selectedMapillaryLookahead !== lookahead) return
+    const { status, image, routeBearing, reason } = lookahead.getStateFor(idx)
+    updatePhotoPanel(status, image, routeBearing, distanceM, reason)
+  })
+}
+
 // ライド終了時の共通処理（新規開始・セッション復元どちらの経路からも呼ばれる）。
 // 複数日ライド用に、そのルート（順走/逆走別）の最終到達距離をIndexedDBへ保存する。
 function handleRideFinished(summary) {
@@ -255,7 +292,13 @@ document.getElementById('reset-trainer-btn').addEventListener('click', () => {
   ftmsClient?.reset().catch((err) => console.warn('Reset trainer failed:', err))
 })
 
-const layoutToggleBtn = document.getElementById('layout-toggle-btn')
+// ライド中（#ride-controls内）とルート選択画面（#start-ride-row内）の両方に
+// ボタンを置き、同じ表示タイプ状態を共有する（#map-containerは両画面で共通の
+// ため、切り替え自体は常に同じDOM操作で済む）。
+const layoutToggleBtns = [
+  document.getElementById('layout-toggle-btn'),
+  document.getElementById('layout-toggle-btn-preride'),
+]
 
 function setDisplayLayoutSwapped(swapped) {
   const eleViewEl   = document.getElementById('ele-view')
@@ -271,12 +314,14 @@ function setDisplayLayoutSwapped(swapped) {
     mapContainerEl.insertBefore(eleViewEl, mapSideEl)
     mapSideEl.insertBefore(mapillaryEl, mapInnerEl)
   }
-  layoutToggleBtn.textContent = swapped ? '表示タイプB' : '表示タイプA'
+  for (const btn of layoutToggleBtns) btn.textContent = swapped ? '表示タイプB' : '表示タイプA'
 }
 
-layoutToggleBtn.addEventListener('click', () => {
-  setDisplayLayoutSwapped(!mapContainerEl.classList.contains('is-swapped'))
-})
+for (const btn of layoutToggleBtns) {
+  btn.addEventListener('click', () => {
+    setDisplayLayoutSwapped(!mapContainerEl.classList.contains('is-swapped'))
+  })
+}
 
 function showStravaWarningDialog() {
   return new Promise((resolve) => {
@@ -360,7 +405,6 @@ stopBtn.addEventListener('click', () => {
 })
 
 function setRidingState(riding) {
-  if (!riding) setDisplayLayoutSwapped(false)
   routeSidePanelEl.hidden = riding
   preRidePanelEl.hidden   = riding
   hudPanelEl.hidden       = !riding
@@ -435,26 +479,6 @@ async function init() {
     onClose: () => renderRideHistory(),
   })
 
-  // 開始距離（複数日ライドの再開地点）に応じて3Dマップ・Mapillary・2Dマップの
-  // プレビューを一致させる。ルート選択直後の初期表示、および開始距離スライダー/
-  // 数値入力の変更時の両方から呼ばれる。
-  function previewAtDistance(distanceM) {
-    eleView?.previewAt(distanceM)
-    mapView.setProgress(distanceM)
-
-    const lookahead = selectedMapillaryLookahead
-    const tracker    = selectedMapillaryTracker
-    if (!lookahead || !tracker) return
-    const idx = tracker.seekTo(distanceM)
-    lookahead.seekTo(idx)
-    resetPhotoPanel()
-    lookahead.tick(idx).then(() => {
-      if (selectedMapillaryLookahead !== lookahead) return
-      const { status, image, routeBearing, reason } = lookahead.getStateFor(idx)
-      updatePhotoPanel(status, image, routeBearing, distanceM, reason)
-    })
-  }
-
   routePickerApi = await initRoutePicker(mapView, {
     onRouteSelected: ({ route, id, name, reversed = false, startDistanceM = 0 }) => {
       selectedRoute             = route
@@ -477,6 +501,10 @@ async function init() {
       previewAtDistance(selectedStartDistanceM)
     },
     onStartDistanceChanged: (distanceM) => {
+      selectedStartDistanceM = distanceM
+      previewAtDistance(distanceM, { withPhoto: false })
+    },
+    onStartDistanceCommitted: (distanceM) => {
       selectedStartDistanceM = distanceM
       previewAtDistance(distanceM)
     },

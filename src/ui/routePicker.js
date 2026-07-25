@@ -7,12 +7,13 @@ const START_DISTANCE_MARGIN_M = 50 // ルート終端ぎりぎりを開始距離
 /**
  * @param {import('./map.js').MapView} mapView
  * @param {{
- *   onRouteSelected?:        (args: { route, id, name, reversed, startDistanceM: number }) => void,
- *   onStartDistanceChanged?: (startDistanceM: number) => void,
+ *   onRouteSelected?:          (args: { route, id, name, reversed, startDistanceM: number }) => void,
+ *   onStartDistanceChanged?:   (startDistanceM: number) => void,
+ *   onStartDistanceCommitted?: (startDistanceM: number) => void,
  * }} [opts]
  * @returns {Promise<{ syncStartDistance: (distanceM: number) => void }>}
  */
-export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanceChanged } = {}) {
+export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanceChanged, onStartDistanceCommitted } = {}) {
   const loadLocalBtn  = document.getElementById('load-local-gpx-btn')
   const loadRemoteBtn = document.getElementById('load-remote-gpx-btn')
   const fileInput     = document.getElementById('gpx-file-input')
@@ -173,13 +174,17 @@ export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanc
    * 状態値を更新し、プロファイル上のマーカー（と、updateInputがtrueなら
    * 数値入力欄）に反映する。数値入力欄からの変更時はupdateInput:false にし、
    * 入力中の値を毎キー入力で上書きして操作を妨げないようにする。
+   * notify（onStartDistanceChanged）はドラッグ中・入力中に連続発火する
+   * 軽量なライブ更新用。Mapillary写真取得のような重い処理は、確定時のみ
+   * 発火するonStartDistanceCommitted（ドラッグのpointerup／入力欄のchange）
+   * 側で行う。
    */
   function setStartDistance(distM, { notify = true, updateInput = true } = {}) {
     if (!currentRoute) return
     const maxM = Math.max(0, currentRoute.totalDistanceM - START_DISTANCE_MARGIN_M)
     startDistanceM = Math.max(0, Math.min(distM, maxM))
     if (updateInput) startDistInput.value = (startDistanceM / 1000).toFixed(2)
-    renderProfile(currentRoute, profileSvg, startDistanceM, (d) => setStartDistance(d))
+    renderProfile(currentRoute, profileSvg, startDistanceM, (d) => setStartDistance(d), () => onStartDistanceCommitted?.(startDistanceM))
     if (notify) onStartDistanceChanged?.(startDistanceM)
   }
 
@@ -187,9 +192,10 @@ export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanc
     const km = parseFloat(startDistInput.value)
     setStartDistance(Number.isFinite(km) ? km * 1000 : 0, { updateInput: false })
   })
-  // 確定時（blur）に、クランプ後の正式な値へ整形し直す
+  // 確定時（blur/Enter）に、クランプ後の正式な値へ整形し直し、確定コールバックを発火する
   startDistInput.addEventListener('change', () => {
     startDistInput.value = (startDistanceM / 1000).toFixed(2)
+    onStartDistanceCommitted?.(startDistanceM)
   })
 
   await renderList()
@@ -265,7 +271,7 @@ export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanc
   }
 }
 
-function renderProfile(route, svgEl, startDistanceM, onSeek) {
+function renderProfile(route, svgEl, startDistanceM, onSeek, onSeekEnd) {
   const pts = route.points.filter((p) => p.elevationM !== null)
   if (pts.length < 2) { svgEl.innerHTML = ''; return }
 
@@ -303,6 +309,7 @@ function renderProfile(route, svgEl, startDistanceM, onSeek) {
     const onUp   = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      onSeekEnd?.()
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)

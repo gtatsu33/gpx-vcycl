@@ -797,15 +797,37 @@ constants.js に集約する。
         #map-side（flex:1、flex-direction: column）
           .mapillary-panel（flex:1、上半分）/ #map-inner（flex:1、下半分）
 
-      表示タイプA/B入れ替え（#layout-toggle-btn、main.jsの
-      setDisplayLayoutSwapped）: #map-inner（2Dマップ）は動かさず、
-      #ele-viewと.mapillary-panelのDOM位置をinsertBeforeで物理的に
-      入れ替える。#map-containerに.is-swappedクラスを付与し、
-      #map-container.is-swapped #ele-view { flex:1 }、
-      同 .mapillary-panel { flex:2 } で大小を上書き。#map-side自体の
-      flex-direction:column／border-leftはロール（右カラム）として
-      不変のため上書き不要。ライド終了時（setRidingStateでriding=false）
-      に必ずsetDisplayLayoutSwapped(false)でタイプAへ戻す。
+      表示タイプA/B入れ替え（main.jsのsetDisplayLayoutSwapped）:
+      #map-inner（2Dマップ）は動かさず、#ele-viewと.mapillary-panelの
+      DOM位置をinsertBeforeで物理的に入れ替える。#map-containerに
+      .is-swappedクラスを付与し、#map-container.is-swapped
+      #ele-view { flex:1 }、同 .mapillary-panel { flex:2 } で大小を
+      上書き。#map-side自体のflex-direction:column／border-leftは
+      ロール（右カラム）として不変のため上書き不要。
+
+      【2026-07-25変更】ボタンは元々#ride-controls内の1個のみ
+      （#layout-toggle-btn、ライド中のみ表示）だったが、事前ライドの
+      ルート選択画面でも操作できるようにするため、同じ役割のボタンを
+      2箇所に設置する構成へ変更した:
+        - #layout-toggle-btn（#ride-controls内、Reset Trainerの右、
+          従来通りライド中のみ表示）
+        - #layout-toggle-btn-preride（#start-ride-row内、「ライドを
+          開始」ボタンの右、事前ライド画面のみ表示）
+      いずれも地図・写真パネルに重ねるオーバーレイ配置にはしない
+      （試作時にLeafletのズームコントロールと重なって隠れる問題が
+      あったため、既存のボタン列に収める方式に変更した）。
+      main.js側はlayoutToggleBtns配列で両ボタンをまとめて参照し、
+      setDisplayLayoutSwapped()内でどちらのtextContentも同時に
+      更新する。#map-container自体が事前ライド・ライド中で共通の
+      DOMのため、切り替えロジック（insertBefore）は1つのままでよい。
+
+      また、従来「ライド終了時は必ずタイプAに戻る」
+      （setRidingState(false)でsetDisplayLayoutSwapped(false)を強制
+      呼び出し）という仕様だったが、2画面でボタンを共有する以上
+      不自然なため廃止した。表示タイプは事前ライド・ライド中を通じて
+      1つの状態として保持され、ユーザーが明示的に切り替えるまで
+      変化しない（spec.txt 9-2節も参照）。
+
       なお main.js の setRidingState は #map-container に .is-riding
       クラスを付与するが、これはレイアウトには使われておらず現状は
       未使用（他の用途で判定が必要になった場合のフック）。
@@ -1006,7 +1028,8 @@ constants.js に集約する。
 ────────────────────────────────────────
 10-7. routePicker.js
 ────────────────────────────────────────
-  initRoutePicker(mapView, {onRouteSelected, onStartDistanceChanged}) で配線。
+  initRoutePicker(mapView, {onRouteSelected, onStartDistanceChanged,
+  onStartDistanceCommitted}) で配線。
   ローカル/リモート双方の読み込み後、ルート名確認モーダル
   （#route-name-overlay）を経てsaveRoute()。
   一覧描画・選択・逆走チェック・削除を担当。選択時に
@@ -1028,6 +1051,17 @@ constants.js に集約する。
     pointerdown/pointermove（renderProfile()内でonSeekコールバック経由）
     の双方から setStartDistance() を呼ぶことで、数値入力とドラッグ操作が
     同じ状態値を介して常に同期する。
+
+    onStartDistanceChanged と onStartDistanceCommitted の使い分け
+    【2026-07-25追加】:
+    - onStartDistanceChanged: ドラッグ中のpointermove・入力中のinputイベント
+      毎に連続発火する。3D/2Dマップ・標高プロファイルのライブプレビュー
+      （軽量・同期処理）専用。
+    - onStartDistanceCommitted: 値が確定した瞬間（ドラッグのpointerup、
+      入力欄のchange＝blur/Enter）にのみ1回発火する。renderProfile()に
+      onSeekEndコールバックを追加し、pointerup時に発火させて実現。
+      Mapillary写真取得のような非同期・重い処理はこちらでのみ行う
+      （理由は10-9節のバグ修正メモを参照）。
 
   リモートGPX一覧（openRemotePicker）: listRemoteGpxFiles()と
   fetchRouteFilesMeta()をPromise.all()で並行取得し、file_key
@@ -1172,10 +1206,11 @@ constants.js に集約する。
       Map<index,{status,image,routeBearing,reason}>のバッファを持ち、
       tick(activeIndex)でactiveIndex+lookaheadPoints
       （既定12点×20m間隔で約240m先）まで1件ずつ先読み取得
-      （#inFlightで同時1件に制限）。activeIndex-1より古いバッファは
-      破棄。#activeSequenceId・#lastImagePositionを跨ぎ保持し、
-      継続性ボーナス・巻き戻り防止の両方に利用（resolveImageForPointが
-      返すimage.sequence / effectiveGeometry(image)で都度更新）。
+      （#inFlightPromiseで同時1件に制限）。activeIndex-1より古い
+      バッファは破棄。#activeSequenceId・#lastImagePositionを跨ぎ
+      保持し、継続性ボーナス・巻き戻り防止の両方に利用
+      （resolveImageForPointが返すimage.sequence /
+      effectiveGeometry(image)で都度更新）。
       resolveImageForPointが例外を投げた場合（フェッチ失敗）は
       catchしてstatus='error', reason='fetch-error'として保存。
       getStateFor(index) → 未取得時は{status:'pending', image:null,
@@ -1183,6 +1218,18 @@ constants.js に集約する。
       panel.jsのpreloadImage(thumb_1024_url)を呼び、表示（activeIndex
       到達）より前にブラウザへ画像バイトを先読みさせる（切り替え時の
       黒画防止）。
+      【2026-07-25修正】tick()呼び出し時に他のフェッチが#inFlightPromise
+      として進行中の場合、以前はそのまま何もせずreturn（空振り）して
+      いたが、これだと空振り直後に単発でgetStateFor()を見る呼び出し元
+      （previewAtDistance()等）が永久にpendingのまま取り残される
+      不具合があった（ライド終了直後にルート選択へ戻ると、直前の
+      ライドtickの進行中フェッチと競合し、写真パネルがNo Imageのまま
+      更新されないケースがあった）。修正後は、進行中フェッチがあれば
+      `await this.#inFlightPromise` した上で `return this.tick(activeIndex)`
+      と自分自身を再帰的に呼び直し、先行フェッチの完了を待ってから
+      改めて次のフェッチを行う（黙って諦めない）。ライド中の高頻度
+      呼び出し（10Hz）に対しても、単に手持ち無沙汰な待機が増えるだけで
+      副作用は無い。
       seekTo(activeIndex) — 開始距離の変更でActiveIndexTracker.seekTo()と
       対にして呼ぶ。#nextFetchIndexをそのindexへ飛ばし、無関係になった
       #buffer・#activeSequenceId・#lastImagePositionをクリアする
@@ -1220,13 +1267,50 @@ constants.js に集約する。
       tracker.seekTo(distM)→lookahead.seekTo(idx)→lookahead.tick(idx)の
       順で呼ばれ、開始距離（複数日ライドの再開地点、既定0）に対応する
       1枚目をプレビューする。同関数はルート選択直後（onRouteSelected）と
-      開始距離の変更時（onStartDistanceChanged、routePicker.js 10-7節）の
+      開始距離の確定時（onStartDistanceCommitted、routePicker.js 10-7節）の
       両方から呼ばれる。
+
+      【2026-07-25バグ修正】以前はonStartDistanceChanged（ドラッグ中の
+      pointermove毎に連続発火）からもpreviewAtDistanceのフル処理（写真
+      取得込み）を呼んでいたため、以下の不具合があった:
+        MapillaryLookahead.tick()は#inFlightで同時1フェッチに制限して
+        いるため、ドラッグ中に発生する大量の呼び出しのうち実際に
+        フェッチが走るのは最初の1回だけで、以降の呼び出しは
+        lookahead.seekTo()でバッファ・#nextFetchIndexをリセットする
+        だけの空振りに終わる。最初のフェッチがネットワーク遅延で
+        一番最後に解決するため、ドラッグ終了（release）時点の位置では
+        なく、ドラッグを開始した最初の位置の写真が最後に上書き表示
+        されてしまっていた。
+      修正: onStartDistanceChangedはpreviewAtDistance(distanceM,
+      {withPhoto:false})に変更し、3D/2Dマップ・標高プロファイルの
+      ライブ更新のみ行う（Mapillary処理を呼ばない）。写真取得を伴う
+      フル同期は、値確定時のみ1回発火するonStartDistanceCommitted
+      （ドラッグのpointerup／入力欄のchange）からのみ呼ぶことで、
+      非同期処理の競合自体を発生させないようにした。
     ライド中: rideController.js #tick 内で
       tracker.update(distanceM)→activeIdx、
       lookahead.tick(activeIdx)（非同期）、
       lookahead.getStateFor(activeIdx)（reason含む）を updatePhotoPanel
       に渡す。
+
+    ライド終了時（handleRideFinished）: previewAtDistance(lastDistanceM)
+      をフル同期で1回呼ぶ（10-1e節）。【2026-07-25バグ修正】ライドの
+      最後のtickによる進行中フェッチとここでの呼び出しが競合すると
+      （lookahead.js 11-2節参照）、以前は空振りしたまま誰も再試行せず
+      写真パネルがNo Imageで固まる不具合があった。lookahead.js側の
+      tick()を「進行中フェッチを待って自分自身を再試行する」実装に
+      直したことで解消（呼び出し側であるここの変更は無し）。
+
+      【2026-07-25バグ修正・その2】上記とは別に、previewAtDistance()が
+      当初init()内のローカル関数として定義されていたため、モジュール
+      トップレベルの関数であるhandleRideFinished()から呼ぶと
+      `previewAtDistance is not defined`のReferenceErrorになる潜在バグが
+      あった（このリポジトリに元々存在していた不具合で、今回のセッション
+      の変更が原因ではない）。実際に走行終了までテストして初めて発覚。
+      previewAtDistance()が参照するmapView/eleView/
+      selectedMapillaryLookahead/selectedMapillaryTrackerは全て
+      モジュールトップレベルのlet変数のため、関数自体をモジュール
+      トップレベル（handleRideFinishedの直前）へ移動して解消した。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
