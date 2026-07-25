@@ -21,9 +21,6 @@ import { precomputeBearings }        from './mapillary/bearing.js'
 import { resampleRoute }             from './mapillary/resample.js'
 import { MapillaryLookahead, ActiveIndexTracker } from './mapillary/lookahead.js'
 import { updatePhotoPanel, resetPhotoPanel } from './mapillary/panel.js'
-import { sendMagicLink, verifyOtp, getSession, onAuthStateChange, signOut as supabaseSignOut }
-  from './supabase/auth.js'
-import { isSupabaseConfigured } from './supabase/client.js'
 
 const MAPILLARY_ENABLED = Boolean(import.meta.env.VITE_MAPILLARY_TOKEN)
 
@@ -377,137 +374,6 @@ function setRidingState(riding) {
   }
 }
 
-// ── Supabase 招待制ログイン（マジックリンク） ─────────────────────────────
-const authGearBtn     = document.getElementById('auth-gear-btn')
-const authPopoverEl   = document.getElementById('auth-popover')
-const loadRemoteGpxBtn = document.getElementById('load-remote-gpx-btn')
-const loadRemoteZwoBtn = document.getElementById('load-remote-zwo-btn')
-
-let currentUser = null
-
-function initAuth() {
-  if (!isSupabaseConfigured()) {
-    authGearBtn.hidden = true
-    return
-  }
-  getSession().then((session) => {
-    currentUser = session?.user ?? null
-    updateAuthUI()
-  })
-  onAuthStateChange((session) => {
-    currentUser = session?.user ?? null
-    updateAuthUI()
-    renderAuthPopover()
-  })
-  authGearBtn.addEventListener('click', () => {
-    authPopoverEl.classList.toggle('open')
-    if (authPopoverEl.classList.contains('open')) renderAuthPopover()
-  })
-  document.addEventListener('click', (e) => {
-    if (!authPopoverEl.classList.contains('open')) return
-    if (e.target === authGearBtn || authPopoverEl.contains(e.target)) return
-    authPopoverEl.classList.remove('open')
-  })
-}
-
-function updateAuthUI() {
-  const isLoggedIn = Boolean(currentUser)
-  authGearBtn.classList.toggle('logged-in', isLoggedIn)
-  authGearBtn.title = isLoggedIn ? `ログイン中: ${currentUser.email}` : 'ログイン'
-  loadRemoteGpxBtn.disabled = !isLoggedIn
-  loadRemoteGpxBtn.title    = isLoggedIn ? '' : '招待ユーザー限定の機能です'
-  loadRemoteZwoBtn.disabled = !isLoggedIn
-  loadRemoteZwoBtn.title    = isLoggedIn ? '' : '招待ユーザー限定の機能です'
-}
-
-function makeAuthCancelBtn() {
-  const btn = document.createElement('button')
-  btn.textContent = 'キャンセル'
-  btn.addEventListener('click', () => authPopoverEl.classList.remove('open'))
-  return btn
-}
-
-// 送信済みメールアドレス（コード入力ステップで使う）
-let authPendingEmail = null
-
-function renderAuthPopover() {
-  authPopoverEl.innerHTML = ''
-  if (currentUser) {
-    authPendingEmail = null
-    const p = document.createElement('p')
-    p.textContent = `ログイン中: ${currentUser.email}`
-    const btn = document.createElement('button')
-    btn.textContent = 'ログアウト'
-    btn.addEventListener('click', async () => {
-      await supabaseSignOut()
-      authPopoverEl.classList.remove('open')
-    })
-    authPopoverEl.append(p, btn, makeAuthCancelBtn())
-    return
-  }
-
-  if (authPendingEmail) {
-    const p = document.createElement('p')
-    p.textContent = 'メールに届いた8桁のコードを入力してください。'
-    const input = document.createElement('input')
-    input.type = 'text'
-    input.inputMode = 'numeric'
-    input.placeholder = '12345678'
-    const status = document.createElement('p')
-    status.id = 'auth-popover-status'
-    const verifyBtn = document.createElement('button')
-    verifyBtn.textContent = 'ログイン'
-    verifyBtn.addEventListener('click', async () => {
-      const token = input.value.trim()
-      if (!token) return
-      verifyBtn.disabled  = true
-      verifyBtn.textContent = '確認中...'
-      const result = await verifyOtp(authPendingEmail, token)
-      verifyBtn.disabled  = false
-      verifyBtn.textContent = 'ログイン'
-      if (!result.ok) {
-        status.textContent = `確認に失敗しました: ${result.error}`
-        status.className   = 'error'
-      }
-    })
-    const backBtn = document.createElement('button')
-    backBtn.textContent = '戻る'
-    backBtn.addEventListener('click', () => {
-      authPendingEmail = null
-      renderAuthPopover()
-    })
-    authPopoverEl.append(p, input, verifyBtn, backBtn, status)
-    return
-  }
-
-  const p = document.createElement('p')
-  p.textContent = '招待ユーザー向けログイン'
-  const input = document.createElement('input')
-  input.type = 'email'
-  input.placeholder = 'メールアドレス'
-  const status = document.createElement('p')
-  status.id = 'auth-popover-status'
-  const sendBtn = document.createElement('button')
-  sendBtn.textContent = 'ログインコードを送る'
-  sendBtn.addEventListener('click', async () => {
-    const email = input.value.trim()
-    if (!email) return
-    sendBtn.disabled  = true
-    sendBtn.textContent = '送信中...'
-    const result = await sendMagicLink(email)
-    sendBtn.disabled  = false
-    sendBtn.textContent = 'ログインコードを送る'
-    if (result.ok) {
-      authPendingEmail = email
-      renderAuthPopover()
-    } else {
-      status.textContent = `送信に失敗しました: ${result.error}`
-      status.className   = 'error'
-    }
-  })
-  authPopoverEl.append(p, input, sendBtn, makeAuthCancelBtn(), status)
-}
-
 // ── Init ───────────────────────────────────────────────────────────────
 async function init() {
   try {
@@ -518,8 +384,6 @@ async function init() {
     console.error(err)
     return
   }
-
-  initAuth()
 
   // オーナーモード: URLに ?owner=PASSCODE があれば検証してセッションに記録
   await activateOwnerModeIfValid()

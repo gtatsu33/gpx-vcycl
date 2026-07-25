@@ -46,23 +46,8 @@
       background: transparent; border: 1px solid #2c4055; border-radius: 8px;
       width: 2rem; height: 2rem; padding: 0; font-size: 1.05rem;
       display: flex; align-items: center; justify-content: center; line-height: 1;
+      opacity: 0.4; cursor: not-allowed;
     }
-    #auth-gear-btn.logged-in { border-color: #34d399; }
-
-    #auth-popover {
-      display: none; position: absolute; top: calc(100% + 8px); right: 0; z-index: 950;
-      background: #19222e; border: 1px solid #2c4055; border-radius: 10px;
-      padding: 0.75rem; min-width: 220px; gap: 0.5rem; flex-direction: column;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    }
-    #auth-popover.open { display: flex; }
-    #auth-popover p { font-size: 0.8rem; color: #ccd8e4; }
-    #auth-popover input[type="email"] {
-      width: 100%; padding: 0.4rem 0.6rem; background: #0a0c10;
-      border: 1px solid #2c4055; border-radius: 6px; color: #ccd8e4; font-size: 0.85rem;
-    }
-    #auth-popover-status { font-size: 0.72rem; color: #6080a0; min-height: 1.2em; }
-    #auth-popover-status.error { color: #f87171; }
 
     /* ── Tab bar ── */
     #tab-bar {
@@ -639,13 +624,10 @@
 <body>
 
   <div id="app-header">
-    <h1>gpx-vcycl <span id="app-version" style="font-size:0.65rem;color:#4a6070;font-weight:400;letter-spacing:0.04em;"></span><span id="owner-badge" style="font-size:0.65rem;color:#4a6070;font-weight:400;letter-spacing:0.04em;" hidden> (o)</span></h1>
+    <h1>gpx-vcycl <span id="app-version" style="font-size:0.975rem;color:#ffffff;font-weight:400;letter-spacing:0.04em;"></span><span id="owner-badge" style="font-size:0.975rem;color:#ffffff;font-weight:400;letter-spacing:0.04em;" hidden> (o)</span></h1>
     <div id="header-right">
       <p id="db-status-error" hidden></p>
-      <button id="auth-gear-btn" title="ログイン">⚙️</button>
-      <div id="auth-popover">
-        <!-- main.js が状態に応じて中身を描画する -->
-      </div>
+      <button id="auth-gear-btn" disabled title="現在利用できません">⚙️</button>
     </div>
   </div>
 
@@ -746,7 +728,7 @@
         <div id="pre-ride-panel">
           <div id="route-controls">
             <button id="load-local-gpx-btn">ローカルからGPXファイルを読み込む</button>
-            <button id="load-remote-gpx-btn" disabled title="招待ユーザー限定の機能です">ネットワークからGPXを読み込む</button>
+            <button id="load-remote-gpx-btn">ネットワークからGPXを読み込む</button>
             <input type="file" id="gpx-file-input" accept=".gpx" hidden />
           </div>
           <div id="route-list"></div>
@@ -888,7 +870,7 @@
     <div id="workout-pre-panel">
       <div id="workout-file-controls">
         <button id="load-zwo-btn">ZWOを読み込む</button>
-        <button id="load-remote-zwo-btn" disabled title="招待ユーザー限定の機能です">ネットワークからZWOを読み込む</button>
+        <button id="load-remote-zwo-btn">ネットワークからZWOを読み込む</button>
         <input type="file" id="zwo-file-input" hidden />
       </div>
       <div id="zwo-list"></div>

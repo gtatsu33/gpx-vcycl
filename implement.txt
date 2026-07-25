@@ -154,9 +154,8 @@
   │   │   ├── auth.js                # OAuthフロー・トークン管理
   │   │   └── upload.js              # アップロード・処理状況ポーリング
   │   │
-  │   ├── supabase/                  # 招待制ログイン（マジックリンク、19章）
-  │   │   ├── client.js               # クライアント共有（remoteRoutes.jsとも共用）
-  │   │   └── auth.js                 # sendMagicLink/getSession/signOut等
+  │   ├── supabase/
+  │   │   └── client.js               # クライアント共有（remoteRoutes.jsとも共用）
   │   │
   │   ├── mapillary/                 # 実写風景写真ルックアヘッド機能
   │   │   ├── api.js                 # 外部API呼び出し
@@ -1556,124 +1555,33 @@ constants.js に集約する。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-19. 招待制ログイン（Supabase Auth・メールOTP）の実装
+19. ログイン機能の廃止
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  gpx-navi・gpx-editor（同じSupabaseプロジェクトを共有する姉妹アプリ）と
-  同じパターンで実装する。spec.txt 9-5節の機能仕様を参照。
+  【2026-07-25変更】Supabase側の設定変更により、SELECTがanon/public
+  ロールでアクセス可能になった。gpx-vcyclはSupabaseに対してSELECT
+  しか発行しないため、招待制ログイン（Supabase Auth・メールOTP）は
+  不要となり廃止した。spec.txt 9-5節を参照。
 
-  【変更履歴・2026-07-18】当初はマジックリンク方式（メール内リンクを
-  クリックしてログイン）で実装したが、以下の問題が判明したため
-  8桁コード手入力方式（verifyOtp）に変更した:
-    - PKCE flow（supabase-js既定）はリンクをリクエストしたブラウザの
-      localStorageにcode verifierを保存し照合するため、別ブラウザ/
-      デバイスでリンクを開くと認証に失敗する
-    - iPhoneのGmailアプリ等、メールクライアントのリンクプレビュー・
-      長押しコピー機能がリンクを自動プリフェッチしてしまい、
-      ワンタイムリンクが本人のクリック前に無効化されてしまう
-    - コード手入力方式であれば、人間が手で入力する必要があるため
-      自動プリフェッチで消費されず、どのブラウザ・デバイスでも使える
-    - 同じSupabaseプロジェクトを共有するgpx-editor・gpx-naviと同時に
-      対応済み。Email Templates（Magic Link）から{{ .ConfirmationURL }}
-      を削除し{{ .Token }}のみを案内する内容に変更済みのため、
-      本アプリ側の追加ダッシュボード作業は不要
+  削除したファイル・関数:
+    - src/supabase/auth.js（sendMagicLink/verifyOtp/getSession/
+      onAuthStateChange/signOut）を削除
+    - src/supabase/client.js の isSupabaseConfigured() を削除
+      （getSupabaseClient()はSELECT用に存置）
+    - main.js の initAuth()/updateAuthUI()/renderAuthPopover()/
+      makeAuthCancelBtn() と関連state（currentUser, authPendingEmail）
+      を削除
 
-────────────────────────────────────────
-19-1. src/supabase/client.js
-────────────────────────────────────────
-  isSupabaseConfigured() → boolean
-    VITE_SUPABASE_URL と VITE_SUPABASE_ANON_KEY の両方が設定されて
-    いるかを返す。未設定時はヘッダーの歯車アイコン自体を非表示にする
-    （main.js側）。
+  DOM変更:
+    - #auth-gear-btn はヘッダーに表示のみ残し、disabled属性を付与して
+      常時クリック不可にする（HTML側の静的属性。JSでの開閉制御は無し）
+    - #auth-popover（ログインポップオーバー）は削除
+    - #load-remote-gpx-btn / #load-remote-zwo-btn から disabled属性・
+      「招待ユーザー限定の機能です」titleを削除し、常時利用可能にする
 
-  getSupabaseClient() → SupabaseClient
-    シングルトンのSupabaseクライアント（@supabase/supabase-js の
-    createClient）。storage/remoteRoutes.js もこの関数を経由して
-    同一クライアントを使う（従来remoteRoutes.js内で独自に
-    createClientしていたのをここに集約、クライアントの二重生成を
-    避ける）。
-
-  ※ VITE_SUPABASE_ANON_KEY には必ずpublishable key（sb_publishable_...）
-    を使うこと。secret key（sb_secret_...）を誤って設定すると
-    クライアントバンドルに焼き込まれ、RLSを無視した全権限が
-    世界に公開されてしまう（実装時に実際にこの取り違えが発生した
-    ため特記する）。
-
-────────────────────────────────────────
-19-2. src/supabase/auth.js
-────────────────────────────────────────
-  sendMagicLink(email) → {ok: true} | {ok: false, error}
-    supabase.auth.signInWithOtp({email}) を呼ぶ。サインアップ
-    （signUp）は呼ばない＝招待制（Supabase側で事前登録された
-    メールアドレスのみログインできる）。emailRedirectToは指定しない
-    （リンククリックを使わないコード入力方式のため不要）。
-
-  verifyOtp(email, token) → {ok: true} | {ok: false, error}
-    supabase.auth.verifyOtp({email, token, type: 'email'}) を呼ぶ。
-    メールで届いた8桁コードを検証し、成功するとセッションが確立される。
-
-  getSession() → Session|null
-    supabase.auth.getSession() のラッパー。
-
-  onAuthStateChange(callback: (session) => void) → unsubscribe関数
-    supabase.auth.onAuthStateChange() のラッパー。verifyOtp成功時の
-    セッション確立をこの購読経由で検知する。
-
-  signOut() → void
-
-────────────────────────────────────────
-19-3. main.js での配線
-────────────────────────────────────────
-  DOM要素:
-    #auth-gear-btn      ヘッダー右上の歯車アイコンボタン
-    #auth-popover        ポップオーバー本体（main.jsがinnerHTMLを都度再構築）
-    #db-status-error     DB初期化失敗時のみ表示するエラーテキスト
-                          （旧#db-statusを置き換え。「DB初期化済み」の
-                          成功メッセージ表示は廃止）
-
-  initAuth()（init()内、initDb()成功後に呼ぶ）:
-    1. isSupabaseConfigured() が false なら #auth-gear-btn を隠して終了
-    2. getSession() で初期状態を取得 → currentUser にセット →
-       updateAuthUI()
-    3. onAuthStateChange() を購読 → currentUser 更新のたびに
-       updateAuthUI() + renderAuthPopover()
-    4. #auth-gear-btn クリックで #auth-popover の open クラスを
-       トグル（開くたびに renderAuthPopover() で中身を再構築）
-    5. ポップオーバー外クリックで自動的に閉じる
-       （document への click リスナーで判定）
-
-  updateAuthUI():
-    ログイン状態に応じて #auth-gear-btn に .logged-in クラスを付与、
-    #load-remote-gpx-btn と #load-remote-zwo-btn の disabled を
-    切り替える（ログイン時のみ有効）。ゲーティング対象はこの2ボタン
-    のみ（spec.txt 9-5節）。
-
-  renderAuthPopover()（3状態、authPendingEmailで送信済みメールを保持）:
-    - ログイン中: 「ログイン中: {email}」+ ログアウトボタン + キャンセルボタン
-    - コード送信済み（authPendingEmail有り）: 案内テキスト + 8桁コード
-      入力欄 + 「ログイン」ボタン（verifyOtp呼び出し）+ 「戻る」ボタン
-      （authPendingEmailをnullに戻して再描画）+ ステータステキスト
-    - 未ログイン・未送信: メール入力 + 「ログインコードを送る」ボタン
-      （sendMagicLink呼び出し、成功したらauthPendingEmailにセットして
-      再描画）+ キャンセルボタン + ステータステキスト
-    キャンセルボタンは各状態共通のmakeAuthCancelBtn()ヘルパーで生成し、
-    クリックで#auth-popoverのopenクラスを外すだけ（状態変更なし）。
-
-────────────────────────────────────────
-19-4. 外部設定（Supabaseダッシュボード側、アプリコード外）
-────────────────────────────────────────
-  - Authentication → Providers → Email でメールOTPを有効化
-  - Authentication → Email Templates → Magic Link のテンプレートから
-    {{ .ConfirmationURL }}（クリック用リンク）を削除し、{{ .Token }}
-    （8桁コード）のみを案内する内容に書き換える（gpx-editor・gpx-navi
-    と共通のSupabaseプロジェクトのため設定済み・追加作業不要）
-  - route_files・workout_files テーブル、gpx_routes Storageバケット
-    （GPX/ZWO共用）に対し、authenticated ロールのみSELECT/downloadを
-    許可するRLSポリシーを設定（db.v4.md参照。gpx-navi・gpx-editorと
-    共通のSupabaseプロジェクト・共通のRLSポリシーを使う）
-  - 招待ユーザーのメールアドレスは Authentication → Users で
-    事前に手動登録する（signUp機能が無いため、未登録メールアドレスは
-    ログインコードを送っても実際にはログインできない）
+  ※ オーナーモード（?owner=PASSCODEによるGoogleマップ有効化、
+    utils/ownerMode.js）はこのログイン機能とは無関係の別機構であり、
+    削除対象外（引き続き利用する）
 
 ================================================================================
   END OF IMPLEMENT
