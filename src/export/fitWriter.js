@@ -69,7 +69,7 @@ function avg(arr, fn) {
  *   samples:   Array<{
  *     timestampMs: number,
  *     lat: number, lon: number, elevationM: number|null,
- *     distanceM: number, velocityMs: number,
+ *     distanceM: number, sessionDistanceM: number, velocityMs: number,
  *     powerW: number, cadenceRpm: number, heartRateBpm: number,
  *   }>
  * }} summary
@@ -82,7 +82,7 @@ export function buildFit(summary) {
   const startTs       = fitTs(startedAt.getTime())
   const endTs         = fitTs(endedAt.getTime())
   const elapsedMs     = endedAt.getTime() - startedAt.getTime()
-  const totalDistM    = samples.length > 0 ? samples.at(-1).distanceM : 0
+  const totalDistM    = samples.length > 0 ? (samples.at(-1).sessionDistanceM ?? samples.at(-1).distanceM) : 0
   const avgSpeedMs    = elapsedMs > 0 ? (totalDistM / elapsedMs) * 1000 : 0
   const avgPowerW     = Math.round(avg(samples, s => s.powerW))
   const avgHR         = Math.round(avg(samples, s => s.heartRateBpm))
@@ -123,7 +123,7 @@ export function buildFit(summary) {
       w.s32(semicircles(s.lat))
       w.s32(semicircles(s.lon))
       w.u16(altRaw(s.elevationM))
-      w.u32(Math.round(s.distanceM * 100))
+      w.u32(Math.round((s.sessionDistanceM ?? s.distanceM) * 100))
       w.u16(Math.round(s.velocityMs * 1000))
       w.u16(Math.max(0, Math.round(s.powerW)))
       w.u8(Math.max(0, Math.round(s.heartRateBpm)))

@@ -214,15 +214,19 @@ export class RideController {
     const state          = this.#simulator.getState()
     const altFactor      = state.altitudeFactor ?? 1
     const effectivePowerW = smoothPowerW * altFactor
+    const sessionDistanceM        = Math.max(0, state.distanceM - this.#startDistanceM)
+    const remainingElevationGainM = this.#route.getElevationGainBetween(state.distanceM, this.#route.totalDistanceM)
     this.#mapView.setCurrentPosition(state.currentLat, state.currentLon, state.headingDeg, state.currentGradientPercent)
     this.#mapView.setProgress(state.distanceM)
     this.#eleView?.update(state.distanceM)
     this.#hudView.update({
       velocityMs:      state.velocityMs,
       distanceM:       state.distanceM,
+      sessionDistanceM,
       totalDistanceM:  this.#route.totalDistanceM,
       elapsedSec:      state.elapsedSec,
       elevationGainM:  state.elevationGainM,
+      remainingElevationGainM,
       powerW:          effectivePowerW,
       altitudeFactor:  altFactor,
       cadenceRpm:      smoothCadence,
@@ -243,6 +247,7 @@ export class RideController {
         lon:             state.currentLon,
         elevationM:      this.#route.getElevationAt(distM),
         distanceM:       distM,
+        sessionDistanceM: Math.max(0, distM - this.#startDistanceM),
         velocityMs:      state.velocityMs,
         gradientPercent: state.currentGradientPercent,
         powerW:          effectivePowerW,

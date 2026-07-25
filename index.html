@@ -241,7 +241,7 @@
     .hud-unit  { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); color: #6080a0; text-transform: uppercase; }
     .hud-label { font-size: clamp(0.6rem, 1.2dvh, 0.72rem); color: #6080a0; margin-top: 0.1rem; }
     .hud-power-penalty { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); color: #f87171; margin-top: 0.05rem; }
-    #hud-remaining { font-size: 0.7rem; color: #6080a0; margin-top: 1px; }
+    #hud-remaining, #hud-elev-remaining { font-size: 0.7rem; color: #6080a0; margin-top: 1px; }
 
     /* ── Route HUD（#map-container直下、常にメイン(左)スロット上のオーバーレイ、グラスモーフィズム） ── */
     #hud-panel { position: absolute; top: 0; left: 0; bottom: 0; width: 100%; z-index: 5; pointer-events: none; }
@@ -805,7 +805,10 @@
                   <svg class="rhud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 9 8l4 6 3-5 5 11z"/></svg>
                   累積標高
                 </span>
-                <span class="rhud-right-block"><span class="rhud-val" id="hud-elev">--</span><span class="rhud-unit">m↑</span></span>
+                <span class="rhud-right-block">
+                  <span class="rhud-val" id="hud-elev">--</span><span class="rhud-unit">m↑</span>
+                  <div id="hud-elev-remaining">残り--m↑</div>
+                </span>
               </div>
             </div>
 

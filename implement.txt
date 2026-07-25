@@ -545,7 +545,9 @@ constants.js に集約する。
 
     constructor(name, points, waypoints=[])
       #buildGradientBuckets()で50m刻みの勾配バケットを事前計算
-      （getGradientAtはこのバケットの階段状の値を返す＝安定重視）
+      （getGradientAtはこのバケットの階段状の値を返す＝安定重視）。
+      同時に50mバケット境界の累積獲得標高の前計算配列
+      （#elevGainCumM、prefix sum）も構築する。
 
     getters: name, points, waypoints
     get totalDistanceM() / get totalElevationGainM()
@@ -553,6 +555,11 @@ constants.js に集約する。
     getElevationAt(distanceM) → number|null（線形補間、両端null時null）
     getGradientAt(distanceM) → number（50mバケットの階段値、未構築時0）
     getPositionAt(distanceM) → {lat, lon}（線形補間）
+    getElevationGainBetween(fromM, toM) → number【2026-07-25追加】
+      区間[fromM, toM]の累積獲得標高[m]。#elevGainCumMのprefix sumを
+      50mバケット単位で差分参照するのみのO(1)実装（HUDの「残り獲得標高」
+      表示用に#tick()毎回呼ばれるため、getGradientAtと同じくバケット
+      単位の近似精度で軽量に保つ）。
 
 ────────────────────────────────────────
 7-3. physics.js
@@ -640,9 +647,17 @@ constants.js に集約する。
     start() → startDistanceM>0ならsimulator.restoreSimState({distanceM:
       startDistanceM, velocityMs:0, elapsedSec:0, elevationGainM:0})で
       複数日ライドの開始距離をシード（restoreSimStateはpause状態にする
-      ため、直後に必ずsimulator.resume()し直す）。以降mapView/eleView/
-      Mapillary/サンプル記録はすべてabsoluteなdistanceMを見ているだけ
-      なので、この一箇所のシード以外に複数日ライド専用の分岐はない。
+      ため、直後に必ずsimulator.resume()し直す）。mapView/eleView/
+      Mapillary/route-progress保存（複数日ライド用、9-1節参照）は
+      すべてabsoluteなdistanceM（ルート起点からの絶対位置）を見ている。
+      【2026-07-25修正】一方、HUD走行距離表示・FITエクスポート・
+      ライド終了モーダル・ライド履歴のtotalDistanceMはabsoluteな
+      distanceMをそのまま使うと開始距離分ズレて表示されるバグが
+      あったため、#tick()でsessionDistanceM = distanceM - startDistanceM
+      を別途算出し、これらの表示・エクスポート用途にはsessionDistanceM
+      を使うよう分離した（サンプルにも distanceM と sessionDistanceM を
+      両方持たせる。resumeChain用のroute-progress保存は従来通り
+      absoluteなdistanceMのまま）。
     pause() / resume()
     stop() → {routeId, routeName, startedAt, endedAt, samples} | null
       （samples.length>=2の場合のみ非null）。FTMSはisControllableなら
@@ -660,11 +675,15 @@ constants.js に集約する。
        torqueNm = calcTorque(smoothPowerW, smoothCadence)
     3. simulator.tick(smoothPowerW, dtSec)
     4. state取得、effectivePowerW = smoothPowerW × state.altitudeFactor
+    4.5. sessionDistanceM = max(0, state.distanceM - startDistanceM)、
+         remainingElevationGainM = route.getElevationGainBetween(
+         state.distanceM, route.totalDistanceM) を算出
     5. mapView.setCurrentPosition/setProgress、eleView?.update(distanceM)
     6. hudView.update({...})  ※10-3節の要素ID対応表を参照
+       （distanceM/sessionDistanceM/remainingElevationGainMを含む）
     7. 1秒毎サンプリングループ（オーバーシュート分を距離で逆補間）:
-       {timestampMs, lat, lon, elevationM, distanceM, velocityMs,
-        gradientPercent, powerW: effectivePowerW, cadenceRpm,
+       {timestampMs, lat, lon, elevationM, distanceM, sessionDistanceM,
+        velocityMs, gradientPercent, powerW: effectivePowerW, cadenceRpm,
         heartRateBpm}
     8. Mapillary: tracker.update(distanceM)→activeIdx、
        lookahead.tick(activeIdx)（非同期・fire-and-forget）、
@@ -832,10 +851,11 @@ constants.js に集約する。
   データ                    要素ID                  表示位置
   ────────────────────────  ──────────────────────  ────────────────────
   速度                      #hud-speed               中央上部・下段
-  距離                      #hud-distance            左パネル
-  残り距離                  #hud-remaining           左パネル(サブ)
+  距離（セッション基準）     #hud-distance            左パネル
+  残り距離（絶対位置基準）   #hud-remaining           左パネル(サブ)
   経過時間                  #hud-time                左パネル
-  累積標高                  #hud-elev                左パネル
+  累積標高（セッション基準） #hud-elev                左パネル
+  残り獲得標高（絶対位置基準）#hud-elev-remaining      左パネル(サブ)【2026-07-25追加】
   標高                      #hud-altitude            右パネル
   パワー                    #hud-power               中央上部・上段
   パワー低下率              #hud-power-penalty       中央上部(補助)
@@ -853,9 +873,15 @@ constants.js に集約する。
   class HUDView（hud.js）:
     setRoute(route)  ルート確定時。初回update()呼び出し時に
       #renderCourseElevation()を実行（SVGがvisibleになってから描画）
-    update({velocityMs, distanceM, totalDistanceM, elapsedSec,
-      elevationGainM, powerW, altitudeFactor=1, cadenceRpm, torqueNm,
-      heartRateBpm, gradientPercent, altitudeM}) 毎tick呼び出し。
+    update({velocityMs, distanceM, sessionDistanceM, totalDistanceM,
+      elapsedSec, elevationGainM, remainingElevationGainM, powerW,
+      altitudeFactor=1, cadenceRpm, torqueNm, heartRateBpm,
+      gradientPercent, altitudeM}) 毎tick呼び出し。
+      #hud-distanceは(sessionDistanceM ?? distanceM)を表示（開始距離の
+      オフセットを含まないセッション内走行距離）。distanceMは残り距離
+      計算・コースマーカー位置（ルート上の絶対位置）にのみ使う
+      【2026-07-25変更】。remainingElevationGainM指定時は#hud-elev-remaining
+      に「残り Xm↑」を表示。
       各#hud-*要素のtextContentを更新するほか、
       #hud-gradient-badgeの背景色・文字色を勾配カラールール
       （下記gradientColor()）で動的に設定する

@@ -7,7 +7,7 @@ export async function saveRide(summary) {
     routeName:        summary.routeName,
     startedAt,
     endedAt,
-    totalDistanceM:   samples.at(-1)?.distanceM ?? 0,
+    totalDistanceM:   samples.at(-1)?.sessionDistanceM ?? samples.at(-1)?.distanceM ?? 0,
     totalElapsedSec:  (endedAt - startedAt) / 1000,
     avgPowerW:        Math.round(avgOf(samples, s => s.powerW)),
     avgCadenceRpm:    Math.round(avgOf(samples.filter(s => s.cadenceRpm > 0), s => s.cadenceRpm)),

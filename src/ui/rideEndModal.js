@@ -38,7 +38,7 @@ export class RideEndModal {
   }
 
   #renderSummary(summary) {
-    const distKm   = ((summary.samples.at(-1)?.distanceM ?? 0) / 1000).toFixed(2)
+    const distKm   = ((summary.samples.at(-1)?.sessionDistanceM ?? summary.samples.at(-1)?.distanceM ?? 0) / 1000).toFixed(2)
     const elapsedS = Math.round((summary.endedAt - summary.startedAt) / 1000)
     const h = Math.floor(elapsedS / 3600)
     const m = Math.floor((elapsedS % 3600) / 60)

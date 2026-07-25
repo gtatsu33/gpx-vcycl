@@ -79,6 +79,7 @@ export class Route {
   #points
   #waypoints = []
   #gradientBuckets = []
+  #elevGainCumM = [0]
   static #ELEVATION_SMOOTHING_WINDOW_M = 300
   static #BUCKET_M = 50
 
@@ -103,6 +104,9 @@ export class Route {
         ? ((eb - ea) / (e - s)) * 100
         : 0
       this.#gradientBuckets.push(pct)
+
+      const gain = (ea !== null && eb !== null && eb > ea) ? eb - ea : 0
+      this.#elevGainCumM.push(this.#elevGainCumM.at(-1) + gain)
     }
   }
 
@@ -146,6 +150,16 @@ export class Route {
       if (prev !== null && curr !== null && curr > prev) gain += curr - prev
     }
     return gain
+  }
+
+  /** 区間 [fromM, toM] の累積獲得標高 [m]（50mバケツ単位、getGradientAtと同精度）。 */
+  getElevationGainBetween(fromM, toM) {
+    if (this.#elevGainCumM.length <= 1) return 0
+    const bM      = Route.#BUCKET_M
+    const lastIdx = this.#elevGainCumM.length - 1
+    const idxFrom = Math.max(0, Math.min(Math.floor(fromM / bM), lastIdx))
+    const idxTo   = Math.max(0, Math.min(Math.ceil(toM / bM), lastIdx))
+    return Math.max(0, this.#elevGainCumM[idxTo] - this.#elevGainCumM[idxFrom])
   }
 
   /** Binary search for the segment index and interpolation factor t containing distanceM. */
