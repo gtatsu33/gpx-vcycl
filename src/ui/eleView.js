@@ -371,17 +371,47 @@ function makeSignSprite(topText, bottomText, bgColor, borderColor, topColor, bot
   return sprite
 }
 
+// 勾配の色分けは getGradientAt() の 50m バケット境界に忠実であるべきなので、
+// GPXの生ポイント間隔がバケット幅より粗い区間は、色サンプリングのために
+// 中間点を補間挿入する（hud.js の 1km 勾配プロファイルと同じ間隔）。
+const COLOR_SAMPLE_M = 20
+
 function buildPts3D(points, getGrad = (d, pt) => pt.gradientPercent ?? 0) {
   const lat0   = points[0].lat
   const lon0   = points[0].lon
   const cosLat = Math.cos(lat0 * DEG2RAD)
-  return points.map(pt => ({
+  const toPt3D = (pt) => ({
     x:     (pt.lon - lon0) * cosLat * EARTH_R * DEG2RAD,
     y:     (pt.elevationM ?? 0) * Y_EXAG,
     z:    -(pt.lat - lat0) * EARTH_R * DEG2RAD,
     distM:  pt.distanceFromStartM,
     grad:   getGrad(pt.distanceFromStartM, pt),
-  }))
+  })
+
+  const out = []
+  for (let i = 0; i < points.length; i++) {
+    const a = toPt3D(points[i])
+    out.push(a)
+    if (i === points.length - 1) break
+
+    const b    = toPt3D(points[i + 1])
+    const gapM = b.distM - a.distM
+    if (gapM <= COLOR_SAMPLE_M) continue
+
+    const n = Math.ceil(gapM / COLOR_SAMPLE_M)
+    for (let k = 1; k < n; k++) {
+      const t     = k / n
+      const distM = a.distM + gapM * t
+      out.push({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+        distM,
+        grad: getGrad(distM),
+      })
+    }
+  }
+  return out
 }
 
 function interpPt(pts3D, distM) {

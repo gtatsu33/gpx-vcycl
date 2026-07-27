@@ -942,7 +942,13 @@ constants.js に集約する。
     previewAt(distanceM) → 開始距離の選択・変更時など、LERP追従を挟まず
       即座にその地点へカメラを飛ばす（#currentDistM/#targetDistM両方を
       即時セット）
-    道路色は勾配によりroadColor()で決定（10-3節と同一しきい値）
+    道路色は勾配によりroadColor()で決定（10-3節と同一しきい値）。
+      buildPts3D()は道路メッシュの頂点列を作る際、GPX生ポイントの
+      間隔がCOLOR_SAMPLE_M(20m、hud.jsの1km勾配プロファイルと同じ
+      間隔)より粗い区間に、route.getGradientAt(distM)で色のみを
+      算出した補間点を追加する（位置はx/y/z線形補間、勾配値は
+      再計算）。これによりGPXの点密度に関わらず、実際にトレーナーへ
+      送られる勾配（50mバケット）の境界と道路の色境界が一致する。
     ROAD_HALF_W=8.0m, Y_EXAG=2.5（標高の視覚的誇張）,
       CAM_HEIGHT=Y_EXAG×3.0, LOOK_AHEAD=5m, AHEAD_M=800/BEHIND_M=30
       （距離ウィンドウ外はdrawRangeで描画スキップ、パフォーマンス対策）
@@ -1084,7 +1090,10 @@ constants.js に集約する。
 
   renderRideHistory() → #ride-history-listへ一覧描画。各行に
     アップロード/FIT/削除ボタン。reupload()はStrava未接続ならalert、
-    接続済みならFIT再生成してuploadToStrava→markUploaded/Failed。
+    接続済みなら prompt() でアップロード名を編集可能にする
+    （初期値はRideEndModalと同じ generateRideName(routeName)、
+    RideEndModalからexportして共有。キャンセル時は何もしない）。
+    その後FIT再生成してuploadToStrava→markUploaded/Failed。
 
 ────────────────────────────────────────
 10-9. workoutTab.js
@@ -1392,6 +1401,14 @@ constants.js に集約する。
 
   getConnectionInfo() → {athleteName, athleteId}|null（リフレッシュなし）
   disconnect() → settings.stravaTokens削除
+
+  verifyConnection() → boolean
+    起動時（main.js init()）に呼び出す接続検証関数。
+    stravaTokens未保存ならfalseを返す。保存済みならgetValidAccessToken()
+    を試行し、成功すればtrue。リフレッシュ失敗（refresh_token失効等）
+    時はdisconnect()を呼びトークンを削除してfalseを返す。
+    これによりOAuthコールバック直後を除く起動時に、リフレッシュトークン
+    失効等で無効化された接続状態をUIの「未接続」表示へ反映できる。
 
 ────────────────────────────────────────
 13-2. src/worker/index.js（サーバー側、単一Workerスクリプト）

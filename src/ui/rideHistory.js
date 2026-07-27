@@ -2,6 +2,7 @@ import { listRides, getRide, deleteRide, markUploaded, markUploadFailed } from '
 import { buildFit }       from '../export/fitWriter.js'
 import { uploadToStrava } from '../strava/upload.js'
 import { getConnectionInfo } from '../strava/auth.js'
+import { generateRideName } from './rideEndModal.js'
 
 export async function renderRideHistory() {
   const listEl = document.getElementById('ride-history-list')
@@ -60,7 +61,8 @@ async function reupload(ride) {
   if (!info) { alert('Stravaに接続されていません。Settingsから接続してください。'); return }
 
   const fullRide = await getRide(ride.id)
-  const name     = `Indoor Ride - ${fullRide.routeName} - ${new Date(fullRide.startedAt).toLocaleDateString('ja-JP')}`
+  const name = prompt('Stravaに登録する名前', generateRideName(fullRide.routeName))
+  if (name === null) return
 
   try {
     const fitData    = buildFit(fullRide)

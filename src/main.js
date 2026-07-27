@@ -9,7 +9,7 @@ import { RideController }            from './ride/rideController.js'
 import { RideEndModal }              from './ui/rideEndModal.js'
 import { renderRideHistory }         from './ui/rideHistory.js'
 import { DEFAULT_PHYSICS }           from './domain/physics.js'
-import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stravaDisconnect }
+import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stravaDisconnect, verifyConnection as verifyStravaConnection }
   from './strava/auth.js'
 import { initWorkoutTab }            from './ui/workoutTab.js'
 import { buildWorkoutFit }           from './export/fitWriter.js'
@@ -450,6 +450,9 @@ async function init() {
     }
     history.replaceState({}, '', window.location.pathname)
   }
+
+  if (!stravaJustConnected) await verifyStravaConnection()
+  updateStravaStatusUI()
 
   const result    = await initDeviceManager({ getFtpW })
   getLiveData     = result.getLiveData

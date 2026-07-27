@@ -131,7 +131,7 @@ export class RideEndModal {
   }
 }
 
-function generateRideName(routeName) {
+export function generateRideName(routeName) {
   return `gpx-vcycl route : ${routeName}`
 }
 

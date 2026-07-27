@@ -65,3 +65,17 @@ export async function getConnectionInfo() {
 export async function disconnect() {
   await getDb().delete('settings', 'stravaTokens')
 }
+
+/** 起動時などに接続状態を検証し、リフレッシュ不能なら自動的に接続解除する */
+export async function verifyConnection() {
+  const tokens = await getDb().get('settings', 'stravaTokens')
+  if (!tokens) return false
+  try {
+    await getValidAccessToken()
+    return true
+  } catch (err) {
+    console.warn('Strava再認証失敗、接続を解除します:', err.message)
+    await disconnect()
+    return false
+  }
+}
