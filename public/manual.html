@@ -1,0 +1,461 @@
+<title>gpx-vcycl ユーザーマニュアル</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --bg:#f7f7f5; --fg:#1f2320; --muted:#5b6259; --card:#ffffff;
+    --border:#e3e1da; --accent:#3f6b4a; --accent-bg:#eaf2ea;
+    --code-bg:#f0efe9; --warn-bg:#fff4e5; --warn-border:#e8b86d;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#1b1d1a; --fg:#e9e9e4; --muted:#a3a99c; --card:#232520;
+      --border:#3a3d36; --accent:#7fb88a; --accent-bg:#22301f;
+      --code-bg:#2a2c25; --warn-bg:#332a15; --warn-border:#8a6a2a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1b1d1a; --fg:#e9e9e4; --muted:#a3a99c; --card:#232520;
+    --border:#3a3d36; --accent:#7fb88a; --accent-bg:#22301f;
+    --code-bg:#2a2c25; --warn-bg:#332a15; --warn-border:#8a6a2a;
+  }
+  :root[data-theme="light"]{
+    --bg:#f7f7f5; --fg:#1f2320; --muted:#5b6259; --card:#ffffff;
+    --border:#e3e1da; --accent:#3f6b4a; --accent-bg:#eaf2ea;
+    --code-bg:#f0efe9; --warn-bg:#fff4e5; --warn-border:#e8b86d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+    line-height:1.75; font-size:16px;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:2rem 1.25rem 6rem;}
+  header.page{margin-bottom:2rem;}
+  header.page h1{font-size:1.7rem; margin:0 0 .3rem;}
+  header.page .ver{color:var(--muted); font-size:.9rem;}
+  nav.toc{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:1.2rem 1.5rem; margin-bottom:2.5rem;
+  }
+  nav.toc h2{font-size:1rem; margin:0 0 .6rem; color:var(--muted); font-weight:600;}
+  nav.toc ol{margin:0; padding-left:1.2rem;}
+  nav.toc li{margin:.25rem 0;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+  section{margin-bottom:3rem; scroll-margin-top:1rem;}
+  h2{
+    font-size:1.35rem; border-bottom:2px solid var(--accent);
+    padding-bottom:.4rem; margin-top:0;
+  }
+  h3{font-size:1.1rem; margin-top:1.8rem; color:var(--fg);}
+  h4{font-size:1rem; margin-top:1.3rem; color:var(--muted);}
+  p{margin:.6rem 0;}
+  ul,ol{padding-left:1.4rem;}
+  li{margin:.35rem 0;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:10px;
+    padding:1rem 1.3rem; margin:1rem 0;
+  }
+  .quickstep{
+    display:flex; gap:.9rem; align-items:flex-start;
+    background:var(--card); border:1px solid var(--border); border-radius:10px;
+    padding:1rem 1.2rem; margin:.9rem 0;
+  }
+  .quickstep .num{
+    flex:none; width:1.8rem; height:1.8rem; border-radius:50%;
+    background:var(--accent); color:#fff; display:flex; align-items:center;
+    justify-content:center; font-weight:700; font-size:.9rem;
+  }
+  .quickstep .body{flex:1;}
+  .quickstep .body strong{display:block; margin-bottom:.2rem;}
+  .note{
+    background:var(--accent-bg); border-left:3px solid var(--accent);
+    padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:.8rem 0; font-size:.95rem;
+  }
+  .warn{
+    background:var(--warn-bg); border-left:3px solid var(--warn-border);
+    padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:.8rem 0; font-size:.95rem;
+  }
+  code{
+    background:var(--code-bg); padding:.1rem .4rem; border-radius:4px;
+    font-size:.9em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  table{width:100%; border-collapse:collapse; margin:1rem 0; font-size:.92rem;}
+  th,td{border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top;}
+  th{background:var(--code-bg); color:var(--muted); font-weight:600;}
+  .backtop{
+    display:inline-block; margin-top:1rem; font-size:.85rem; color:var(--muted);
+    text-decoration:none;
+  }
+  .backtop:hover{color:var(--accent);}
+  hr.sep{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
+  ::selection{background:var(--accent-bg);}
+</style>
+
+<div class="wrap">
+
+<header class="page">
+  <h1>gpx-vcycl ユーザーマニュアル</h1>
+  <div class="ver">対象バージョン: v2.20.1</div>
+</header>
+
+<nav class="toc">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">クイックスタート</a></li>
+    <li><a href="#ch2">画面の基本構成</a></li>
+    <li><a href="#ch3">デバイス接続（詳細）</a></li>
+    <li><a href="#ch4">設定</a></li>
+    <li><a href="#ch5">ルートモード（詳細）</a></li>
+    <li><a href="#ch6">ワークアウトモード（詳細）</a></li>
+    <li><a href="#ch7">ライド記録・Strava連携・履歴</a></li>
+    <li><a href="#ch8">困ったときは</a></li>
+    <li><a href="#ch9">制限事項</a></li>
+  </ol>
+</nav>
+
+<section id="ch1">
+<h2>1. クイックスタート</h2>
+<p>まずはこの章の手順だけで、機材をつないでコースを走り、Stravaに記録を残すところまでできます。細かい仕様は2章以降で説明します。</p>
+
+<h3>起動条件</h3>
+<table>
+  <tr><th>環境</th><th>必要なブラウザ</th></tr>
+  <tr><td>iPad / iPhone（iOS / iPadOS）</td><td>「Bluefy」アプリ（Web Bluetoothに対応した専用ブラウザ）。標準のSafariやiOS版Chromeでは接続できません。</td></tr>
+  <tr><td>Windows / Mac</td><td>最新版の Chrome または Edge。特別なアプリは不要です。</td></tr>
+</table>
+<div class="note">画面は横向き（ランドスケープ）での利用を前提としています。iPadは横向きに固定して使ってください。</div>
+
+<div class="quickstep">
+  <div class="num">1</div>
+  <div class="body">
+    <strong>スマートトレーナー／パワーメーター／心拍計を接続する</strong>
+    「デバイス」タブを開き、使いたい機器のカードにある「接続」ボタンを押します。Bluetoothのペアリング選択画面が出たら対象機器を選んでください。
+    <ul>
+      <li>トレーナー・パワーメーター・心拍計はそれぞれ最大1台まで接続できます。</li>
+      <li>実機トレーナーが無い場合は、トレーナーカードの「ダミー」にチェックを入れると仮想的な固定値で走行できます。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="quickstep">
+  <div class="num">2</div>
+  <div class="body">
+    <strong>Stravaと連携する</strong>
+    ヘッダー付近の設定ボタンから設定モーダルを開き、「Strava連携」ボタンで認可します。外部ブラウザに遷移するため、Bluetooth接続は一旦切れます。<b>ライドを開始する前に接続しておく</b>のがおすすめです。
+  </div>
+</div>
+
+<div class="quickstep">
+  <div class="num">3</div>
+  <div class="body">
+    <strong>ルートモードを使う（ルートを読み込んで開始）</strong>
+    「ルート」タブで、端末上のGPXファイルを選ぶか、リモートのGPX一覧から選んでルートを読み込みます。保存済みルート一覧から走りたいルートを選び、「ライドを開始」を押すとスタートします。
+  </div>
+</div>
+
+<div class="quickstep">
+  <div class="num">4</div>
+  <div class="body">
+    <strong>Strava保存の仕方</strong>
+    ゴールするか「終了」ボタンを押すと終了モーダルが出ます。「Stravaにアップロード」を押すと、記録の保存 → FIT形式への変換 → Strava送信まで自動で行われます。
+  </div>
+</div>
+
+<p style="margin-top:1.5rem;">より詳しい操作や仕様は次章以降を参照してください。</p>
+</section>
+
+<section id="ch2">
+<h2>2. 画面の基本構成</h2>
+<p>アプリはタブ切り替え式の単一ページです。</p>
+<ul>
+  <li><b>ヘッダー</b>：アプリ名とバージョン番号（<code>vX.Y.Z</code>）を表示します。</li>
+  <li><b>タブ</b>：「デバイス」「ルート」「ワークアウト」「履歴」の4つを切り替えて使います。</li>
+</ul>
+<p>加えて、どのタブからでも以下がオーバーレイ（重ね表示）として開くことがあります。</p>
+<ul>
+  <li>設定モーダル</li>
+  <li>Strava未接続の確認ダイアログ（ライド開始前）</li>
+  <li>ライド終了モーダル／ワークアウト終了モーダル</li>
+  <li>ルート名入力モーダル、リモートGPX/ZWO選択モーダル</li>
+</ul>
+<div class="note">画面は横向き（ランドスケープ）を前提としたレイアウトです。</div>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch3">
+<h2>3. デバイス接続（詳細）</h2>
+
+<h3>3種類のBLEデバイス</h3>
+<table>
+  <tr><th>デバイス</th><th>規格</th><th>取得できる値</th><th>負荷制御</th></tr>
+  <tr><td>トレーナー</td><td>FTMS</td><td>速度・ケイデンス・パワー</td><td>できる（勾配に応じて負荷を変える）</td></tr>
+  <tr><td>パワーメーター</td><td>CPS</td><td>パワー・ケイデンス</td><td>できない</td></tr>
+  <tr><td>心拍計</td><td>HRS</td><td>心拍数</td><td>ー</td></tr>
+</table>
+<p>それぞれ同時に1台のみ接続できます（同種の機器を複数同時接続することはできません）。</p>
+
+<h3>画面の見方</h3>
+<ul>
+  <li>上部に、現在有効なパワー値が大きく表示されます（どのデバイス由来かも併記）。</li>
+  <li>3つのデバイスカードに、接続状態（未接続／接続中.../接続済）・現在値・接続/切断ボタンが並びます。</li>
+  <li>下部にBLE通信ログが時刻付きで表示されます（新しいログが上に追加されます）。</li>
+</ul>
+
+<h3>パワーソースの選択</h3>
+<p>トレーナーとパワーメーターを両方接続している場合、どちらの値をシミュレーションの入力に使うかを設定モーダルで選べます（「トレーナー」または「パワーメーター」）。</p>
+<ul>
+  <li>切り替えた直後は、パワー・ケイデンス表示が一時的に0にリセットされます。</li>
+  <li>心拍は、どちらを選んでいても常に心拍計の値を使います。</li>
+  <li>ケイデンスは選択中のパワーソースに紐づく値が使われます。</li>
+</ul>
+
+<h3>ダミートレーナーモード</h3>
+<p>実機のトレーナーが無い環境向けに、固定値（設定したFTP相当のパワー、ケイデンス90rpm固定、心拍は実測があればそれを使用）で走行できるモードです。動作確認用のため、ライド開始時の「Strava未接続警告」はスキップされます。</p>
+
+<h3>接続がうまくいかないとき</h3>
+<ul>
+  <li><b>デバイスが見つからない／接続を拒否した</b>：ログに接続エラーが表示され、ボタンは「接続」に戻ります。もう一度お試しください。</li>
+  <li><b>ライド中にBluetoothが切れた</b>：ログに切断が記録されます。表示は直前の値のまま更新が止まります。再接続すれば値の更新が再開します。</li>
+</ul>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch4">
+<h2>4. 設定</h2>
+<p>設定ボタンから開く設定モーダルで、以下の項目を調整できます。設定内容は端末に保存され、次回起動時も引き継がれます。</p>
+<table>
+  <tr><th>項目</th><th>入力形式</th><th>既定値</th><th>説明</th></tr>
+  <tr><td>Strava連携</td><td>ボタン</td><td>未接続</td><td>Strava認可・連携解除</td></tr>
+  <tr><td>パワーソース</td><td>ラジオボタン</td><td>トレーナー</td><td>トレーナー／パワーメーターのどちらを使うか</td></tr>
+  <tr><td>ライダー体重</td><td>数値(kg)</td><td>70</td><td>走行シミュレーションに使用</td></tr>
+  <tr><td>自転車重量</td><td>数値(kg)</td><td>10</td><td>同上</td></tr>
+  <tr><td>CdA（空気抵抗）</td><td>スライダー(m²)</td><td>0.32</td><td>前面投影面積×抗力係数</td></tr>
+  <tr><td>Crr（転がり抵抗）</td><td>スライダー</td><td>0.005</td><td>タイヤの転がり抵抗係数</td></tr>
+  <tr><td>移動平均時間窓</td><td>数値(秒)</td><td>3</td><td>パワー・ケイデンス表示の平滑化時間</td></tr>
+  <tr><td>FTP（機能的閾値パワー）</td><td>数値(W)</td><td>170</td><td>ワークアウトの目標パワー算出等に使用</td></tr>
+  <tr><td>トレーナー負荷制御</td><td>トグル</td><td>ON</td><td>勾配に応じてトレーナーの負荷を自動で変える機能のON/OFF</td></tr>
+  <tr><td>負荷強度</td><td>スライダー</td><td>0.5</td><td>GPX勾配に対しトレーナーへ送る勾配の倍率</td></tr>
+  <tr><td>高度効果</td><td>トグル</td><td>ON</td><td>標高1500m超でのパワー低下シミュレーションのON/OFF</td></tr>
+</table>
+<p>それぞれの詳しい効き方は5章で説明します。</p>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch5">
+<h2>5. ルートモード（詳細）</h2>
+
+<h3>5-1. GPXルートの読み込み・管理</h3>
+<p><b>読み込み方法</b></p>
+<ul>
+  <li><b>ローカルファイル</b>：端末上のGPXファイルを選んで読み込みます（認証不要）。</li>
+  <li><b>リモート</b>：あらかじめ登録されているGPXファイル一覧（表示名・距離・獲得標高付き）から選んでダウンロードします（認証不要、誰でも利用できます）。</li>
+</ul>
+<p>どちらの方法でも、読み込み後にルート名を確認・編集するダイアログが出て、保存すると一覧に追加されます。</p>
+
+<p><b>保存済みルート一覧でできること</b></p>
+<ul>
+  <li>ルート名・総距離・累積標高の確認</li>
+  <li>「逆走」チェックボックス：始点⇔終点を反転して走行します（名前付きの看板ポイントも逆順のまま有効です）</li>
+  <li>削除（確認ダイアログあり）</li>
+</ul>
+<p>ルートを選ぶと、地図上にルート全体が描画され、標高プロファイル（小さいグラフ）がプレビュー表示されます。</p>
+
+<h3>5-2. 開始距離（複数日にわけて走る）</h3>
+<p>長いルートを何回かに分けて走れるように、ルート選択時に「開始距離」（ルート起点からのオフセット距離）を指定できます。分けて走った各回は連結されず、それぞれ独立したライドとして記録されます（Strava上も別アクティビティになります）。</p>
+<ul>
+  <li>標高プロファイル上をクリック／ドラッグすると、その位置に対応する距離へマーカーが移動します。</li>
+  <li>数値入力欄（km単位）でも直接指定できます。スライダーと数値欄は連動します。</li>
+  <li>初期値は、そのルート（順走/逆走を区別）について前回ライドで到達した最終距離です（記録が無ければ0）。</li>
+  <li>ライド終了時、そのルートの最終到達距離が自動で端末に保存されます。</li>
+  <li>開始距離を変えると、3Dマップ・実写風景写真・2Dマップのプレビューがその地点の内容に更新されます。</li>
+</ul>
+
+<h3>5-3. 事前ライド画面</h3>
+<p>画面左側にルート一覧・標高プロファイル・「ライドを開始」ボタンがあり、右側にプレビュー用の地図エリアがあります。地図エリアの配置はライド中画面（5-4節）と同じ比率で統一されています。</p>
+<p>「ライドを開始」はルート未選択時は押せません。Strava未接続の場合はライド開始前に確認ダイアログが出ます（ダミートレーナー使用時はスキップ）。ライドは指定した開始距離から始まります。</p>
+
+<h3>5-4. ライド中画面</h3>
+<p>ライドを開始すると事前ライド用のパネルは隠れ、地図エリアが画面全体に広がります。画面は上段（地図類）・コース全体標高帯・ライドコントロールの3段構成です。</p>
+
+<h4>3Dマップ（走行風景）</h4>
+<p>進行方向を一人称視点で描画します。路面の色は勾配に応じて変わります。</p>
+<table>
+  <tr><th>勾配</th><th>色</th></tr>
+  <tr><td>3%未満</td><td>緑（平坦〜緩い上り／下り）</td></tr>
+  <tr><td>3〜6%</td><td>黄（中程度の上り）</td></tr>
+  <tr><td>6〜9%</td><td>橙（きつい上り）</td></tr>
+  <tr><td>9〜12%</td><td>赤（非常にきつい上り）</td></tr>
+  <tr><td>12%以上</td><td>濃赤茶（激坂）</td></tr>
+</table>
+<p>1kmごと、および名前付きの地点（GPXに名前が入っているウェイポイント）ごとに、残り距離を示す看板が仮想的に設置されます。ゴール地点には専用の看板があります。</p>
+
+<h4>HUD（3Dマップ上の情報表示）</h4>
+<ul>
+  <li><b>中央上部（リアルタイム系）</b>：上段にパワー[W]・ケイデンス[rpm]・心拍[bpm]、下段に速度[km/h]・トルク[N·m]。標高の影響でパワーが低下している場合は低下率も表示されます。</li>
+  <li><b>左（累積系）</b>：経過時間、走行距離（残り距離も併記）、累積標高[m↑]（残り獲得標高も併記）。いずれも開始距離より手前の分は含まず、そのライドで実際に走った分だけがカウントされます。</li>
+  <li><b>右（ルート情報）</b>：現在の勾配[%]（色分けバッジ）、現在の標高[m]。</li>
+  <li><b>左下（直近1kmプロファイル）</b>：現在地点から1km先までの標高・勾配を色分けグラフで表示。500m・1km地点にラベル、現在地点を縦線マーカーで示します。</li>
+</ul>
+<p>ゴールに到達すると「ゴール！」のメッセージが表示されます。</p>
+
+<h4>実写風景写真（右上）</h4>
+<p>現在地点付近で撮影された実写のストリートレベル写真が、走行の進行に合わせて自動的に切り替わります。撮影者クレジットが写真下部に表示されます。写真が表示できない場合は、原因に応じて次のいずれかが表示されます。</p>
+<ul>
+  <li><code>No Photos Nearby</code>：付近に候補写真が1枚もない</li>
+  <li><code>No Matching Angle</code>：候補はあるが進行方向に合う向きの写真がない</li>
+  <li><code>Failed to Load Photo</code>：外部サービスとの通信に失敗した</li>
+</ul>
+
+<h4>2Dマップ（右下）</h4>
+<p>ルート全体（青線）と走行済み区間（緑線）、現在位置（進行方向を示す矢印）、スタート地点（🟢）・ゴール地点（🏁）を表示します。地図をスワイプなどで操作すると自動追従が解除され、再センターボタンで現在地に戻り自動追従が再開します。</p>
+
+<h4>コース全体標高表示（最下部）</h4>
+<p>ルート全体の標高プロファイルを距離軸で表示し、現在位置を縦線マーカーで示します。常時表示される固定の帯です。</p>
+
+<h4>表示タイプA/Bの切り替え</h4>
+<p>「表示タイプA/B」ボタンを押すたびに、3Dマップと実写風景写真の大小・左右表示が入れ替わります（タイプA=既定=3Dが左大／写真が右上小、タイプB=写真が左大／3Dが右上小）。2Dマップの位置・サイズは常に固定です。このボタンは事前ライド画面とライド中画面の両方にあり、切り替え状態は共有されます（ライドの開始・終了では変化しません）。</p>
+
+<h4>ライドコントロール</h4>
+<ul>
+  <li><b>一時停止／再開</b></li>
+  <li><b>終了</b>：走行を終了し、ライド終了モーダルを表示します</li>
+  <li><b>トレーナー緊急リセット</b>：トレーナーの負荷が想定外に高くなった場合の安全弁です。負荷をリセットします。</li>
+</ul>
+
+<h3>5-5. 走行シミュレーションについて</h3>
+<p>入力パワー（BLEから取得した値を数秒平均で平滑化したもの）と、ルート上の現在地点の勾配から、リアルタイムに走行速度が計算されます。体重・CdA・Crrなど、計算に使うパラメータは4章の設定で調整できます。</p>
+
+<h3>5-6. 高度によるパワー低下</h3>
+<p>標高1500mを超える区間では、高地での有酸素能力低下を模して、入力パワーが自動的に少し低下した扱いになります（標高100mごとに約1%低下、例：標高3000mでは約15%低下）。1500m以下では低下しません。設定でON/OFFを切り替えられます（既定ON）。</p>
+
+<h3>5-7. トレーナー負荷制御</h3>
+<p>対応トレーナーに対し、現在地点の勾配を定期的に送って実際のペダリング抵抗を変化させます。</p>
+<ul>
+  <li>設定でON/OFF切替可能（既定ON、要トレーナー接続）</li>
+  <li>実際に送る勾配は「GPX上の勾配 × 負荷強度」です（既定0.5。フルの勾配だと負荷が過大になるための緩和係数です）</li>
+  <li>勾配は±25%にクリップして送信されます（トレーナー保護のため）</li>
+  <li>対応していないトレーナーの場合は、負荷制御なしで速度・パワーの読み取りのみ継続します</li>
+  <li>ライド終了時・緊急リセット時は負荷がゼロに戻ります</li>
+</ul>
+
+<h3>5-8. ゴール判定・ライド終了</h3>
+<p>走行距離がルートの総距離に到達すると自動的にゴールとなり、「ゴール！」表示の後にライドが終了します。手動での終了（終了ボタン）も可能です。記録が一定量あれば、終了時にライド終了モーダルが表示されます（7章参照）。</p>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch6">
+<h2>6. ワークアウトモード（詳細）</h2>
+<p>GPXルートを使わず、時間×パワー目標（FTPに対する比率）で構成されるインターバルトレーニングを行うモードです。標準的なZWO（Zwift Workout）形式のファイルをそのまま読み込めます。</p>
+
+<h3>6-1. ZWOファイルの読み込みと管理</h3>
+<ul>
+  <li><b>ローカルファイル</b>：端末上のZWOファイルを選んで読み込みます（認証不要）。</li>
+  <li><b>リモート</b>：登録済みのZWOファイル一覧（表示名・合計時間付き）から選んでダウンロードします（認証不要）。</li>
+</ul>
+<p>読み込んだファイルは名前・区間構成が解析されてすぐに保存されます（ルートと違い、名前の確認ダイアログは挟みません）。保存済み一覧には名前・合計時間・プロファイル概形（区間ごとにFTP比率で色分けした小さいグラフ）が表示されます。選択すると詳細プロファイルとワークアウト開始ボタンが有効になります。削除も可能です（確認ダイアログあり）。</p>
+
+<h3>6-2. 区間の種類</h3>
+<table>
+  <tr><th>種類</th><th>内容</th></tr>
+  <tr><td>ウォームアップ／クールダウン</td><td>パワーが直線的に変化する区間</td></tr>
+  <tr><td>定常走行</td><td>一定パワーを維持する区間</td></tr>
+  <tr><td>インターバル</td><td>ON/OFFパワーを指定回数繰り返す区間</td></tr>
+  <tr><td>フリーライド</td><td>パワー目標を設けない自由走行区間（ERGモード解除）</td></tr>
+</table>
+<p>各区間はFTPに対する比率でパワー目標が指定されます（例：FTPの75%）。区間ごとにケイデンス目標が任意で設定されている場合もあります。</p>
+
+<h3>6-3. ワークアウト実行画面</h3>
+<ul>
+  <li><b>左側HUD</b>：実測パワー／目標パワー、実測ケイデンス／目標ケイデンス、心拍、経過時間・残り時間、仮想距離・仮想速度（勾配ゼロの平坦シミュレーションによる参考値）</li>
+  <li><b>右側</b>：区間一覧（現在区間をハイライト、残り時間表示、自動スクロール）</li>
+  <li><b>下部</b>：全体プログレスバー（区間ごとに色分け、現在位置マーカー、総時間表示）</li>
+  <li><b>FTP微調整</b>：実行中でもFTP値を上下ボタンで一時的に調整でき、目標パワーに即反映されます</li>
+  <li>目標からの乖離が大きい場合はアラートメッセージが表示されます</li>
+  <li>一時停止／終了ボタン</li>
+</ul>
+
+<h3>6-4. ERGモード</h3>
+<p>対応トレーナーに対し、現在区間の目標パワーを一定間隔で送信し、ケイデンスに関わらず目標パワーを維持させます。フリーライド区間ではERGモードが解除され、通常の自走状態に戻ります。</p>
+
+<h3>6-5. 自動一時停止・自動再開</h3>
+<ul>
+  <li>パワーがしばらくゼロの状態が続く、またはトレーナーが切断されると自動的に一時停止します。</li>
+  <li>一時停止中に一定以上のパワーが継続して検出されると自動的に再開します。</li>
+  <li>手動で一時停止した場合も、いったんゼロパワーを経てから高パワーへの復帰が検出されると自動再開扱いになります。</li>
+</ul>
+
+<h3>6-6. ワークアウト終了</h3>
+<p>全区間終了、または手動終了で記録が確定し、終了モーダルが表示されます（7章参照）。ワークアウトモードでは位置情報・標高・勾配は記録されません（ルートに依存しないため）。</p>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch7">
+<h2>7. ライド記録・Strava連携・履歴</h2>
+
+<h3>7-1. 記録の保存とライド終了モーダル</h3>
+<p>走行終了時（ルートモード・ワークアウトモード共通）にモーダルが表示され、距離・経過時間・平均パワー・平均心拍のサマリーが確認できます。ライド名も編集できます（既定名はルート名またはワークアウト名ベース）。</p>
+<ul>
+  <li><b>Stravaにアップロード</b>（Strava未接続時は無効化されます）：記録の保存 → FIT形式への変換 → Stravaへのアップロードが自動で行われます。成功するとアップロード状態が「送信済」になります。失敗した場合も記録はローカルに保存されたままで、履歴タブから再アップロードできます。</li>
+  <li><b>保存のみ（後でアップロード）</b>：記録だけを保存し、FIT変換・アップロードは行いません。</li>
+  <li><b>破棄</b>：何も保存せずに閉じます。</li>
+</ul>
+<div class="note">記録は「保存」または「Stravaにアップロード」を選んだ場合のみ端末に残ります。自動保存はされません。</div>
+
+<h3>7-2. FIT形式エクスポート</h3>
+<p>保存済みの記録は、いつでもFIT形式ファイルとして履歴タブからダウンロードできます。GPS位置・標高（ルートモードのみ）、速度、パワー、ケイデンス、心拍、平均値・獲得標高などのサマリーが含まれます。</p>
+
+<h3>7-3. Strava連携</h3>
+<ul>
+  <li>設定モーダルの「Strava連携」ボタンから認可します。外部ブラウザに遷移するため、Bluetooth接続は一旦切れます。ライド開始前に接続しておくのがおすすめです。</li>
+  <li>連携解除も可能です。</li>
+  <li>アップロード時、ワークアウト記録は「屋内トレーニング」として、ルート記録は「バーチャルライド」としてStravaに登録されます。</li>
+  <li>ライド開始前にStrava未接続の場合、確認ダイアログが出て、未接続のまま続行するか選べます（ダミートレーナー使用時はスキップされます）。</li>
+</ul>
+
+<h3>7-4. 履歴タブ</h3>
+<p>保存済みライドが新しい順に一覧表示されます。各記録について以下が確認・操作できます。</p>
+<ul>
+  <li>ルート名、Stravaアップロード状態バッジ、日時、距離、経過時間、平均パワー</li>
+  <li>Strava送信済みの場合、該当アクティビティへのリンク</li>
+  <li><b>再アップロード</b>（未送信または失敗時）：ダイアログでStrava登録名を確認・編集してから送信します（キャンセルするとアップロードは行われません）</li>
+  <li><b>FITダウンロード</b></li>
+  <li><b>削除</b>（確認ダイアログあり）</li>
+</ul>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch8">
+<h2>8. 困ったときは</h2>
+<table>
+  <tr><th>状況</th><th>対処・仕様</th></tr>
+  <tr><td>BLEデバイスが見つからない／接続を拒否した</td><td>ログにエラーが表示され、ボタンは「接続」に戻ります。もう一度接続をお試しください。</td></tr>
+  <tr><td>ライド中にBluetoothが切れた</td><td>ログに切断が表示され、直前の値を保持したまま表示の更新が止まります。再接続すると再開します。</td></tr>
+  <tr><td>トレーナーが負荷制御に対応していない</td><td>ログに「制御ポイント利用不可」と表示され、負荷制御なしで速度・パワーの読み取りのみ継続します。</td></tr>
+  <tr><td>急勾配（±25%超）のルート</td><td>トレーナー保護のため±25%にクリップして送信されます。</td></tr>
+  <tr><td>標高情報のないGPX</td><td>該当区間は勾配0%として扱われます（エラーにはなりません）。</td></tr>
+  <tr><td>不正な形式のGPXファイル</td><td>パースエラーが表示され、読み込みがスキップされます。</td></tr>
+  <tr><td>有効なトラックポイントが2点未満のGPX</td><td>読み込みがエラーとして中断されます。</td></tr>
+  <tr><td>Strava認可コードの交換に失敗</td><td>トースト通知でエラーが表示されます。もう一度連携をお試しください。</td></tr>
+  <tr><td>Stravaアップロードに失敗</td><td>記録はローカルに保存されたままで、履歴タブから再アップロードできます。</td></tr>
+  <tr><td>Stravaアップロードが一定時間（約60秒）で終わらない</td><td>タイムアウトとしてエラー扱いになります。履歴タブから再アップロードしてください。</td></tr>
+  <tr><td>実写風景写真が表示されない</td><td>状況に応じて <code>No Photos Nearby</code> / <code>No Matching Angle</code> / <code>Failed to Load Photo</code> のいずれかが表示されます（5-4節参照）。</td></tr>
+</table>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+<section id="ch9">
+<h2>9. 制限事項</h2>
+<ul>
+  <li>スマートトレーナー・パワーメーター・心拍計は、それぞれ同時に1台までしか接続できません。</li>
+  <li>ANT+には対応していません（Bluetoothのみ）。</li>
+  <li>マルチユーザー対応・ソーシャル機能はありません。</li>
+  <li>アバターや3Dキャラクター演出はなく、マップ・走行風景の表示に限定されます。</li>
+  <li>ルート・記録はクラウド同期されません（端末ローカル保存が基本で、Strava送信は一方向のみです）。</li>
+  <li>ホーム画面に追加してPWAとしてインストールでき、GPXルート・記録・設定はオフラインでも閲覧・走行に利用できます。ただし、新しいルート/ワークアウトのリモート読み込みやStravaアップロードにはインターネット接続が必要です。</li>
+</ul>
+<a class="backtop" href="#ch1">↑ 目次へ</a>
+</section>
+
+</div>
