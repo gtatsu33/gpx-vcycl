@@ -49,6 +49,14 @@
       opacity: 0.4; cursor: not-allowed;
     }
 
+    #help-link {
+      background: transparent; border: 1px solid #2c4055; border-radius: 8px;
+      width: 2rem; height: 2rem; padding: 0; font-size: 1.05rem;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+      color: #ffffff; text-decoration: none;
+    }
+    #help-link:hover { background: #2c4055; }
+
     /* ── Tab bar ── */
     #tab-bar {
       display: flex;
@@ -630,6 +638,7 @@
     <h1>gpx-vcycl <span id="app-version" style="font-size:0.975rem;color:#ffffff;font-weight:400;letter-spacing:0.04em;"></span><span id="owner-badge" style="font-size:0.975rem;color:#ffffff;font-weight:400;letter-spacing:0.04em;" hidden> (o)</span></h1>
     <div id="header-right">
       <p id="db-status-error" hidden></p>
+      <a id="help-link" href="/manual.html" target="_blank" rel="noopener" title="使い方">❔</a>
       <button id="auth-gear-btn" disabled title="現在利用できません">⚙️</button>
     </div>
   </div>
