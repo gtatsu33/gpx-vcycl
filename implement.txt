@@ -1391,24 +1391,37 @@ constants.js に集約する。
     {accessToken, refreshToken, expiresAt(unix秒), athleteId,
     athleteName} を組み立て、settings.stravaTokensへ保存。
 
-  getValidAccessToken() → accessToken
-    expiresAt > now+60秒 ならキャッシュ済みトークンをそのまま返す。
-    それ以外は `/strava-refresh` へ{refresh_token}をPOSTし、
-    access_token/expires_atのみ更新して保存
+  refreshAccessToken(tokens)（内部関数、非export） → accessToken
+    `/strava-refresh` へ{refresh_token}をPOSTし、access_token/expires_at
+    のみ更新して保存する。失敗時（応答が非OK、通信エラー等）は
+    disconnect()を呼びsettings.stravaTokensを削除したうえで例外を
+    再throwする
     （※ Stravaがrefresh_tokenをローテーションした場合、レスポンスの
     新refresh_tokenを保存していない実装になっている点に注意
     ―将来的な改善候補）。
 
-  getConnectionInfo() → {athleteName, athleteId}|null（リフレッシュなし）
+  getValidAccessToken() → accessToken
+    expiresAt > now+60秒 ならキャッシュ済みトークンをそのまま返す
+    （Stravaへの問い合わせなし）。それ以外はrefreshAccessToken()を
+    呼び出す。リフレッシュ失敗時はrefreshAccessToken()内でdisconnect()
+    済みの状態で例外が伝播する（呼び出し元のuploadToStrava()等で
+    catchされても、DB上の接続状態は正しく「未接続」になっている）。
+
+  getConnectionInfo() → {athleteName, athleteId}|null
+    stravaTokensの存在有無のみを見る（有効性検証は行わない）。
+
   disconnect() → settings.stravaTokens削除
 
   verifyConnection() → boolean
-    起動時（main.js init()）に呼び出す接続検証関数。
-    stravaTokens未保存ならfalseを返す。保存済みならgetValidAccessToken()
-    を試行し、成功すればtrue。リフレッシュ失敗（refresh_token失効等）
-    時はdisconnect()を呼びトークンを削除してfalseを返す。
-    これによりOAuthコールバック直後を除く起動時に、リフレッシュトークン
-    失効等で無効化された接続状態をUIの「未接続」表示へ反映できる。
+    起動時（main.js init()）およびSettingsタブ表示のたび
+    （updateStravaStatusUI()内）に呼び出す接続検証関数。
+    stravaTokens未保存なら即falseを返す。保存済みならexpiresAtに
+    関わらず必ずrefreshAccessToken()で実際にStravaへ問い合わせ、
+    成功すればtrue。失敗（refresh_token失効等）時はrefreshAccessToken()
+    内でdisconnect()が呼ばれた状態でfalseを返す。
+    getValidAccessToken()と異なりキャッシュを信用しないため、
+    Strava側で連携解除された場合など「ローカルのexpiresAtはまだ有効
+    だが実際には無効」なケースもここで検知できる。
 
 ────────────────────────────────────────
 13-2. src/worker/index.js（サーバー側、単一Workerスクリプト）

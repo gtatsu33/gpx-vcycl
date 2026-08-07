@@ -36,24 +36,34 @@ export async function exchangeCode(code) {
   return tokens
 }
 
-/** 有効なアクセストークンを返す（期限切れなら自動リフレッシュ） */
+/** Stravaにアクセストークンのリフレッシュを問い合わせ、DBを更新する。失敗時は接続を解除して例外を投げる */
+async function refreshAccessToken(tokens) {
+  try {
+    const res = await fetch('/strava-refresh', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ refresh_token: tokens.refreshToken }),
+    })
+    if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`)
+    const data      = await res.json()
+    const newTokens = { ...tokens, accessToken: data.access_token, expiresAt: data.expires_at }
+    await getDb().put('settings', newTokens, 'stravaTokens')
+    return newTokens.accessToken
+  } catch (err) {
+    console.warn('Strava再認証失敗、接続を解除します:', err.message)
+    await disconnect()
+    throw err
+  }
+}
+
+/** 有効なアクセストークンを返す（期限切れなら自動リフレッシュ、失敗時は接続解除） */
 export async function getValidAccessToken() {
-  const db     = getDb()
-  const tokens = await db.get('settings', 'stravaTokens')
+  const tokens = await getDb().get('settings', 'stravaTokens')
   if (!tokens) throw new Error('Strava not connected')
 
   if (tokens.expiresAt > Date.now() / 1000 + 60) return tokens.accessToken
 
-  const res = await fetch('/strava-refresh', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ refresh_token: tokens.refreshToken }),
-  })
-  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`)
-  const data      = await res.json()
-  const newTokens = { ...tokens, accessToken: data.access_token, expiresAt: data.expires_at }
-  await db.put('settings', newTokens, 'stravaTokens')
-  return newTokens.accessToken
+  return refreshAccessToken(tokens)
 }
 
 export async function getConnectionInfo() {
@@ -66,16 +76,14 @@ export async function disconnect() {
   await getDb().delete('settings', 'stravaTokens')
 }
 
-/** 起動時などに接続状態を検証し、リフレッシュ不能なら自動的に接続解除する */
+/** 起動時・Settings表示時などに接続状態を検証する（expiresAtに関わらず必ずStravaへ問い合わせ、失敗なら接続解除） */
 export async function verifyConnection() {
   const tokens = await getDb().get('settings', 'stravaTokens')
   if (!tokens) return false
   try {
-    await getValidAccessToken()
+    await refreshAccessToken(tokens)
     return true
-  } catch (err) {
-    console.warn('Strava再認証失敗、接続を解除します:', err.message)
-    await disconnect()
+  } catch {
     return false
   }
 }

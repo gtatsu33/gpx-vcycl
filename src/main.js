@@ -101,10 +101,11 @@ document.getElementById('strava-disconnect-btn').addEventListener('click', async
 })
 
 async function updateStravaStatusUI() {
-  const info         = await getConnectionInfo()
   const statusEl     = document.getElementById('strava-status')
   const connectBtn   = document.getElementById('strava-connect-btn')
   const disconnectBtn = document.getElementById('strava-disconnect-btn')
+  const connected    = await verifyStravaConnection()
+  const info         = connected ? await getConnectionInfo() : null
   if (info) {
     statusEl.textContent    = `接続済: ${info.athleteName}`
     connectBtn.hidden       = true
@@ -451,7 +452,6 @@ async function init() {
     history.replaceState({}, '', window.location.pathname)
   }
 
-  if (!stravaJustConnected) await verifyStravaConnection()
   updateStravaStatusUI()
 
   const result    = await initDeviceManager({ getFtpW })
