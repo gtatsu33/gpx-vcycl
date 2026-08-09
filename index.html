@@ -269,9 +269,20 @@
     .rhud-val  { font-weight: 700; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
     .rhud-unit { color: #6080a0; text-transform: uppercase; letter-spacing: 0.03em; }
 
+    /* 上段3パネル（左/中央/右）: flexboxのspace-between+flex-shrinkで幅方向の重なりを構造的に防止。
+       各パネルに flex-shrink:1 / min-width:0 を与えることで、幅が足りない時は実際に箱ごと縮小される
+       （CSS Gridのjustify-self:start/end等では箱自体は縮まず隣接トラックへ視覚的にはみ出すため不採用）。
+       各パネルの overflow:hidden により、縮小しきれない内部コンテンツはクリップで収まる
+       （通常は内部要素のclamp()側が先に縮小するため発生しない）。 */
+    #rhud-row {
+      position: absolute; top: 10px; left: 10px; right: 10px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: clamp(6px, 1.5dvw, 14px);
+    }
+
     /* 中央上部: リアルタイム系（上段=パワー/ケイデンス/心拍、下段=速度/トルク） */
     #rhud-top {
-      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      order: 2; flex: 0 1 auto; min-width: 0;
       display: flex; flex-direction: column; overflow: hidden;
       border-top: 2px solid #38bdf8;
     }
@@ -283,42 +294,42 @@
     }
     #rhud-top .cell:last-child { border-right: none; }
     #rhud-top .cell .rhud-icon { color: #38bdf8; opacity: 0.85; align-self: center; }
-    #rhud-top .row-major .cell { padding: 0.5rem 1.15rem; min-width: 84px; }
+    #rhud-top .row-major .cell { padding: clamp(0.3rem, 1dvw, 0.5rem) clamp(0.5rem, 2.2dvw, 1.15rem); min-width: clamp(56px, 11dvw, 84px); }
     #rhud-top .row-major .rhud-icon { width: 19px; height: 19px; }
-    #rhud-top .row-major .rhud-val  { font-size: clamp(1.3rem, 3.4dvh, 1.7rem); }
-    #rhud-top .row-major .rhud-unit { font-size: 0.68rem; }
+    #rhud-top .row-major .rhud-val  { font-size: clamp(1.0rem, min(3.4dvh, 4.6dvw), 1.7rem); }
+    #rhud-top .row-major .rhud-unit { font-size: clamp(0.56rem, 1.6dvw, 0.68rem); }
     #rhud-top .row-minor { opacity: 0.92; }
-    #rhud-top .row-minor .cell { padding: 0.3rem 1.15rem 0.4rem; min-width: 84px; }
+    #rhud-top .row-minor .cell { padding: clamp(0.2rem, 0.8dvw, 0.3rem) clamp(0.5rem, 2.2dvw, 1.15rem) clamp(0.25rem, 1dvw, 0.4rem); min-width: clamp(56px, 11dvw, 84px); }
     #rhud-top .row-minor .rhud-icon { width: 13px; height: 13px; opacity: 0.65; }
-    #rhud-top .row-minor .rhud-val  { font-size: clamp(0.85rem, 2dvh, 1.05rem); }
-    #rhud-top .row-minor .rhud-unit { font-size: 0.56rem; }
+    #rhud-top .row-minor .rhud-val  { font-size: clamp(0.72rem, min(2dvh, 3dvw), 1.05rem); }
+    #rhud-top .row-minor .rhud-unit { font-size: clamp(0.5rem, 1.3dvw, 0.56rem); }
     #rhud-top .hud-power-penalty { text-align: center; padding-bottom: 0.3rem; }
 
     /* 左: 累積系（経過時間・走行距離・累積標高） */
     #rhud-left {
-      position: absolute; top: 10px; left: 10px;
-      display: flex; flex-direction: column; min-width: 120px; overflow: hidden;
+      order: 1; flex: 0 1 auto; min-width: 0;
+      display: flex; flex-direction: column; overflow: hidden;
       border-left: 2px solid #64b5f6;
     }
     /* 右: ルート情報（勾配・標高） */
     #rhud-right {
-      position: absolute; top: 10px; right: 10px;
-      display: flex; flex-direction: column; min-width: 120px; overflow: hidden;
+      order: 3; flex: 0 1 auto; min-width: 0;
+      display: flex; flex-direction: column; overflow: hidden;
       border-right: 2px solid #ffb454;
     }
     .rhud-group-title {
-      font-size: 0.58rem; letter-spacing: 0.08em; color: rgba(255,255,255,0.4);
+      font-size: clamp(0.5rem, 1.3dvw, 0.58rem); letter-spacing: 0.08em; color: rgba(255,255,255,0.4);
       text-transform: uppercase; padding: 0.45rem 0.7rem 0.1rem;
     }
     .rhud-row {
-      display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
-      padding: 0.3rem 0.7rem; border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: space-between; gap: clamp(0.3rem, 1dvw, 0.6rem);
+      padding: clamp(0.2rem, 0.6dvw, 0.3rem) clamp(0.5rem, 1.8dvw, 0.7rem); border-top: 1px solid rgba(255,255,255,0.06);
     }
     .rhud-row:first-of-type { border-top: none; }
-    .rhud-label-row { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; color: #ccd8e4; white-space: nowrap; }
+    .rhud-label-row { display: flex; align-items: center; gap: 4px; font-size: clamp(0.6rem, 1.6dvw, 0.72rem); color: #ccd8e4; white-space: nowrap; }
     .rhud-label-row .rhud-icon { color: rgba(255,255,255,0.45); }
     .rhud-right-block { text-align: right; }
-    .rhud-row .rhud-val { font-size: 1.15rem; }
+    .rhud-row .rhud-val { font-size: clamp(0.95rem, 2.6dvw, 1.15rem); }
     .rhud-grad-badge {
       display: inline-flex; align-items: baseline; gap: 2px;
       padding: 0.1rem 0.5rem; border-radius: 999px;
@@ -766,6 +777,8 @@
              常にメイン(左)スロットをオーバーレイするよう、#map-container直下の独立要素にする -->
         <div id="hud-panel" hidden>
 
+          <!-- 上段3パネル（左/中央/右）は#rhud-rowでグリッド化し、幅方向の重なりを構造的に防止 -->
+          <div id="rhud-row">
             <!-- 中央上部: リアルタイム系（上段=パワー/ケイデンス/心拍、下段=速度/トルク） -->
             <div id="rhud-top" class="rhud-glass">
               <div class="row row-major">
@@ -845,6 +858,7 @@
                 <span class="rhud-right-block"><span class="rhud-val" id="hud-altitude">--</span><span class="rhud-unit">m</span></span>
               </div>
             </div>
+          </div><!-- #rhud-row -->
 
             <!-- 直近1kmの勾配プロファイル -->
             <div id="rhud-gradient-wrap" class="rhud-glass">
