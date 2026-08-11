@@ -1204,6 +1204,18 @@ constants.js に集約する。
           復旧後の画面全体が正しく動かないように見えた）。
           routePicker.jsの選択フローと同じくmapView.setRoute(route)を
           eleView.setRoute(route)の直前に追加して解消。
+
+          【既知の制約・検証済み】Windows/Chromeでは、異常終了→復帰→
+          「再開する」→トレーナー再接続→再走行まで一連の動作を確認済み。
+          iOS(Bluefy)では、Bluefyアプリをバックグラウンドから復帰させた
+          場合（アプリ自体は終了させていない）、Bluefy内部のWeb
+          Bluetooth実装が古い接続状態を引きずり、トレーナーの「接続中...」
+          から進まなくなることがある（別デバイスから同じトレーナーへは
+          問題なく接続できるため、トレーナー側ではなくBluefy側の制約と
+          切り分け済み）。Bluefyアプリを完全終了してから開き直せば解消
+          する。アプリ側のコード（本節のBLE切断・自動保存等）では対処
+          できない、Bluefyのブラウザ実装に起因する既知の制約として記録
+          する（spec.txt 6-2-1節参照）。
         [ここまでの記録を終了して保存]
           checkpointToSummary(routeSession)でsummary化し、
           clearRouteSession()した上でrideEndModal.show(summary,
