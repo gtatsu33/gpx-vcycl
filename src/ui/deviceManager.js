@@ -92,10 +92,10 @@ export async function initDeviceManager({ getFtpW = () => 170 } = {}) {
 
     connectBtn.addEventListener('click', async () => {
       setStatus('connecting')
-      const savedName = await db.get('settings', dbKey)
-      if (savedName) appendLog(`${deviceName}: 前回のデバイス「${savedName}」に接続中...`)
-      else           appendLog(`${deviceName}: 接続を試みています...`)
       try {
+        const savedName = await db.get('settings', dbKey)
+        if (savedName) appendLog(`${deviceName}: 前回のデバイス「${savedName}」に接続中...`)
+        else           appendLog(`${deviceName}: 接続を試みています...`)
         await client.connect(savedName ?? null)
       } catch (err) {
         setStatus('disconnected')

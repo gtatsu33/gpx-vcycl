@@ -1045,6 +1045,16 @@ constants.js に集約する。
   {powerW: getFtpW(), cadenceRpm: 90, heartRateBpm: live.heartRateBpm}
   を返す。
 
+  wireCard()のconnectBtnクリックハンドラは、db.get('settings', dbKey)
+  からclient.connect()までの処理全体をtry/catchで囲む。以前はdb.get()
+  がtry/catchの外にあり、ここで例外（Promise reject）が起きると
+  client.connect()（navigator.bluetooth.requestDevice()を呼びネイティブ
+  デバイス選択ポップアップを表示する処理）に到達せず、catchブロックも
+  実行されないため、setStatus('connecting')のまま復帰不能になる不具合が
+  あった（ポップアップも出ずBLEログにもエラーが出ないまま「接続中...」
+  が固まる。走行中断からの復旧後に再接続できないという報告の実体は
+  これで、複数タブでのBLE接続競合が原因ではなかった）。
+
   document.visibilitychange('hidden')でftms/cps/hrsの3クライアントを
   すべてdisconnect()する（spec.txt 3-6節・10-7-1節参照）。
   FtmsClient/CpsClient/HrsClientのdisconnect()は
