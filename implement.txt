@@ -1191,6 +1191,19 @@ constants.js に集約する。
           （旧initブロックの中身をそのまま関数化したもの。draftRideIdを
           routeSession.draftRideIdから引き継ぎ、startAutosaveTimer()を
           呼ぶ点が新規）。
+          【バグ修正】旧実装はeleView.setRoute(route)のみでmapView.
+          setRoute(route)を呼んでいなかった（routePicker.jsのルート選択
+          フロー経由でしか呼ばれない想定だったが、復旧フローはこの
+          選択フローを経由しないため漏れていた）。この状態で
+          restoreFrom()が即座にtick（10Hz）を開始しmapView.
+          setCurrentPosition()が無条件にpanTo()するため、一度も
+          fitBoundsされていない・タブがちょうど非表示から表示に
+          切り替わった直後という不整合な状態でLeafletの内部タイル計算が
+          破綻し、Uncaught Error: Attempted to load an infinite number of
+          tilesがtickのたびに発生し続けていた（HUD更新等も巻き込まれて
+          復旧後の画面全体が正しく動かないように見えた）。
+          routePicker.jsの選択フローと同じくmapView.setRoute(route)を
+          eleView.setRoute(route)の直前に追加して解消。
         [ここまでの記録を終了して保存]
           checkpointToSummary(routeSession)でsummary化し、
           clearRouteSession()した上でrideEndModal.show(summary,

@@ -604,6 +604,7 @@ async function init() {
     selectedReversed          = false // セッション復元時は逆走フラグを保持しないため forward 扱い
     selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(resampleRoute(route)) : null
     startBtn.disabled = false
+    mapView.setRoute(route)
     eleView?.setRoute(route)
 
     let mapillaryLookahead = null
