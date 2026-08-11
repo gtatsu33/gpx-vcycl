@@ -7,7 +7,7 @@ import { HUDView }                   from './ui/hud.js'
 import { initRoutePicker }           from './ui/routePicker.js'
 import { RideController }            from './ride/rideController.js'
 import { RideEndModal }              from './ui/rideEndModal.js'
-import { renderRideHistory }         from './ui/rideHistory.js'
+import { renderRideHistory, configureRideHistory } from './ui/rideHistory.js'
 import { DEFAULT_PHYSICS }           from './domain/physics.js'
 import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stravaDisconnect, verifyConnection as verifyStravaConnection }
   from './strava/auth.js'
@@ -216,6 +216,8 @@ const AUTOSAVE_INTERVAL_MS   = 20000
 
 let draftRideId    = null  // 走行中の下書きレコードID（storage/rides.js）
 let autosaveTimerId = null
+
+configureRideHistory({ getActiveDraftId: () => draftRideId })
 
 function checkpointToSummary(cp) {
   return {

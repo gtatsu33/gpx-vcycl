@@ -1045,6 +1045,23 @@ constants.js に集約する。
   {powerW: getFtpW(), cadenceRpm: 90, heartRateBpm: live.heartRateBpm}
   を返す。
 
+  document.visibilitychange('hidden')でftms/cps/hrsの3クライアントを
+  すべてdisconnect()する（spec.txt 3-6節・10-7-1節参照）。
+  FtmsClient/CpsClient/HrsClientのdisconnect()は
+  `if (this.#device?.gatt.connected) this.#device.gatt.disconnect()`
+  という同期API呼び出しのみで、未接続時は何もしない安全なガード付き。
+  狙いは、ホームボタン操作等でタブがバックグラウンドへ回った際に
+  トレーナー等との接続を明示的に手放し、ブラウザの履歴／最近使った
+  タブから別タブとして開き直された場合でも新しいタブから即座に
+  再接続できるようにすること（BLEデバイスは通常1台のセントラルとしか
+  同時接続できないため、元タブが接続を握ったままだと新タブの接続が
+  「接続中...」のまま固まる／エラーになっていた）。beforeunload/
+  pagehideと異なりvisibilitychangeはバックグラウンド化の瞬間に確実に
+  発火し、disconnect()も非同期処理を待たない同期APIのため、実行漏れが
+  起きにくい（10-7-1節のroute-session自動保存と同じ理由づけ）。
+  フォアグラウンド復帰時の自動再接続は行わない（ユーザーが手動で
+  「接続」ボタンを押す）。
+
 ────────────────────────────────────────
 10-7. routePicker.js
 ────────────────────────────────────────
@@ -1193,17 +1210,31 @@ constants.js に集約する。
       （自動保存で既にIndexedDBへ書かれているため、単にモーダルを
       閉じるだけでは下書きが履歴に残り続けてしまう）。
 
+  configureRideHistory({getActiveDraftId}) → main.jsが
+    () => draftRideId をモジュール読み込み時点（トップレベル、init()
+    より前）で注入する。タブ切り替え（10-1節）は表示のDOM切替のみで
+    rideController.pause()を呼ばないため、走行中に履歴タブへ移動しても
+    RideControllerは裏で動き続け、そのdraftレコードも自動保存タイマー
+    （10-7-1節）で更新され続ける。isActiveDraft = ride.isDraft &&
+    ride.id === getActiveDraftId() でこれを判定し、「中断中」（復旧待ち
+    の下書き）と「走行中」（今まさに裏で走行中の下書き）のバッジを
+    区別する。走行中のdraftは記録を確定/削除の両ボタンを出さない
+    （履歴タブから操作させると、その後も継続する自動保存で上書き
+    され状態が矛盾するため）。
+
   renderRideHistory() → #ride-history-listへ一覧描画。各行に
     アップロード/FIT/削除ボタン（ride.isDraft時はアップロード/FITの
-    代わりに「記録を確定」ボタン、削除ボタンのラベルは「破棄」）。
+    代わりに「記録を確定」ボタン、削除ボタンのラベルは「破棄」。
+    isActiveDraft時は確定・削除ボタンいずれも非表示）。
     reupload()はStrava未接続ならalert、接続済みなら prompt() で
     アップロード名を編集可能にする（初期値はRideEndModalと同じ
     generateRideName(routeName)、RideEndModalからexportして共有。
     キャンセル時は何もしない）。その後FIT再生成してuploadToStrava→
     markUploaded/Failed。
     finalizeDraft(ride) → 履歴タブから、走行を再開せずに下書きを確定
-    記録へ変える経路。getRide(ride.id)でsamples等を取得しsummary形状
-    に組み直してfinalizeDraftRide(ride.id, summary)を呼ぶ。確定後は
+    記録へ変える経路（isActiveDraftの場合はボタン自体が出ないため
+    呼ばれない）。getRide(ride.id)でsamples等を取得しsummary形状に
+    組み直してfinalizeDraftRide(ride.id, summary)を呼ぶ。確定後は
     通常のライドと同様にreupload()等の操作が可能になる。
 
 ────────────────────────────────────────

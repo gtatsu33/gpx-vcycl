@@ -4,6 +4,15 @@ import { uploadToStrava } from '../strava/upload.js'
 import { getConnectionInfo } from '../strava/auth.js'
 import { generateRideName } from './rideEndModal.js'
 
+// 現在走行中のライドに対応するdraftRideIdを取得する関数。main.jsから
+// configureRideHistory()で注入される（未設定時は常にnull＝全draftを
+// 「中断中」扱いにする）。
+let getActiveDraftId = () => null
+
+export function configureRideHistory({ getActiveDraftId: fn } = {}) {
+  if (fn) getActiveDraftId = fn
+}
+
 export async function renderRideHistory() {
   const listEl = document.getElementById('ride-history-list')
   if (!listEl) return
@@ -25,30 +34,38 @@ function buildRideItem(ride) {
   el.className = 'ride-item'
   el.dataset.id = ride.id
 
+  const isActiveDraft = ride.isDraft && ride.id === getActiveDraftId()
+
   const distKm   = (ride.totalDistanceM / 1000).toFixed(2)
   const timeStr  = fmtTime(ride.totalElapsedSec)
   const dateStr  = new Date(ride.startedAt).toLocaleString('ja-JP', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
-  const badge    = ride.isDraft ? '中断中' : statusBadge(ride.uploadStatus)
-  const badgeCls = ride.isDraft ? 'draft' : ride.uploadStatus
+  const badge    = ride.isDraft ? (isActiveDraft ? '走行中' : '中断中') : statusBadge(ride.uploadStatus)
+  const badgeCls = ride.isDraft ? (isActiveDraft ? 'active' : 'draft') : ride.uploadStatus
   const stravaLink = ride.stravaActivityId
     ? `<a href="https://www.strava.com/activities/${ride.stravaActivityId}" target="_blank" class="strava-link">Stravaで見る</a>`
+    : ''
+  // 走行中のdraftは裏でRideControllerが更新し続けているため、履歴タブ
+  // から確定・削除させると次の自動保存で上書きされてしまう。ここでは
+  // 操作させず、ルートタブでの終了操作へ誘導する。
+  const activeNote = isActiveDraft
+    ? ' &middot; <span style="color:#fbbf24;">ルートタブで走行中</span>'
     : ''
 
   el.innerHTML = `
     <div class="ride-info">
       <span class="ride-name">${escHtml(ride.routeName)} <span class="status-badge ${badgeCls}">${badge}</span></span>
-      <span class="ride-meta">${dateStr} &middot; ${distKm} km &middot; ${timeStr} &middot; ${ride.avgPowerW} W ${stravaLink}</span>
+      <span class="ride-meta">${dateStr} &middot; ${distKm} km &middot; ${timeStr} &middot; ${ride.avgPowerW} W ${stravaLink}${activeNote}</span>
     </div>
     <div class="ride-actions">
-      ${ride.isDraft ? '<button class="draft-finish-btn small-btn">記録を確定</button>' : ''}
+      ${ride.isDraft && !isActiveDraft ? '<button class="draft-finish-btn small-btn">記録を確定</button>' : ''}
       ${!ride.isDraft && ride.uploadStatus !== 'uploaded' ? '<button class="upload-btn small-btn">アップロード</button>' : ''}
       <button class="fit-dl-btn small-btn">FIT</button>
-      <button class="ride-del-btn small-btn">${ride.isDraft ? '破棄' : '削除'}</button>
+      ${isActiveDraft ? '' : `<button class="ride-del-btn small-btn">${ride.isDraft ? '破棄' : '削除'}</button>`}
     </div>
   `
 
   el.querySelector('.fit-dl-btn').addEventListener('click', () => downloadFit(ride))
-  el.querySelector('.ride-del-btn').addEventListener('click', async () => {
+  el.querySelector('.ride-del-btn')?.addEventListener('click', async () => {
     const msg = ride.isDraft
       ? `「${ride.routeName}」の中断中の記録を破棄しますか？`
       : `「${ride.routeName}」のライド記録を削除しますか？`

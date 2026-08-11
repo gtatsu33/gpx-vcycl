@@ -162,6 +162,21 @@ export async function initDeviceManager({ getFtpW = () => 170 } = {}) {
   }
   updateActivePower()
 
+  // ホームボタン操作等でタブがバックグラウンドに回った瞬間にBLE接続を
+  // 解放する。狙いは「元のタブが接続を握ったまま」になるのを防ぐこと
+  // （ブラウザの履歴/最近使ったタブから開き直すと新しいタブとして
+  // 再ナビゲーションされることが多く、その場合トレーナーは通常1台の
+  // セントラルとしか同時接続できないため、元のタブが繋いだままだと
+  // 新しいタブから再接続できず「接続中...」のまま固まる／エラーになる）。
+  // visibilitychangeはbeforeunload/pagehideと異なりバックグラウンド化の
+  // 瞬間に確実に発火し、disconnect()自体も同期APIのため実行漏れが少ない。
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') return
+    ftms.disconnect()
+    cps.disconnect()
+    hrs.disconnect()
+  })
+
   return {
     getLiveData: () => dummyEnabled
       ? { powerW: getFtpW(), cadenceRpm: 90, heartRateBpm: live.heartRateBpm }
