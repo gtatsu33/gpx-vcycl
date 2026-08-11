@@ -14,7 +14,7 @@ import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stra
 import { initWorkoutTab }            from './ui/workoutTab.js'
 import { buildWorkoutFit }           from './export/fitWriter.js'
 import { uploadToStrava }            from './strava/upload.js'
-import { saveRide, markUploaded, markUploadFailed } from './storage/rides.js'
+import { saveRide, saveDraftRide, deleteRide, markUploaded, markUploadFailed } from './storage/rides.js'
 import { Route }                     from './domain/route.js'
 import { getRoute, saveRouteProgress } from './storage/routes.js'
 import { precomputeBearings }        from './mapillary/bearing.js'
@@ -204,19 +204,71 @@ let rideEndModal    = null
 let isPaused        = false
 
 // ── Route session persistence ───────────────────────────────────────────
-const ROUTE_SESSION_KEY = 'route-session'
+// 走行中断からの復旧（spec.txt 6-2-1節）: localStorageのチェックポイントは
+// 「再開」用、IndexedDBの下書きレコード（draftRideId）は「履歴タブから
+// 直接、再開せずに確定・Stravaアップロードできる」ためのもの。両者は
+// 定期タイマー（AUTOSAVE_INTERVAL_MS毎）で同時に更新する。beforeunloadは
+// ホームボタン操作やOSによる強制終了では発火しないため、この定期保存が
+// 主たる防御線となる（beforeunload/pagehide/visibilitychangeは補助的に
+// 即時保存を試みるのみ）。
+const ROUTE_SESSION_KEY      = 'route-session'
+const AUTOSAVE_INTERVAL_MS   = 20000
+
+let draftRideId    = null  // 走行中の下書きレコードID（storage/rides.js）
+let autosaveTimerId = null
+
+function checkpointToSummary(cp) {
+  return {
+    routeId:   cp.routeId,
+    routeName: cp.routeName,
+    startedAt: new Date(cp.startedAt),
+    endedAt:   new Date(),
+    samples:   cp.samples,
+  }
+}
 
 function saveRouteSession() {
   if (!rideController || !selectedRouteId) return
   const cp = rideController.getCheckpoint()
   if (!cp) return
-  try { localStorage.setItem(ROUTE_SESSION_KEY, JSON.stringify(cp)) }
+  try { localStorage.setItem(ROUTE_SESSION_KEY, JSON.stringify({ ...cp, draftRideId })) }
   catch { /* storage full */ }
+}
+
+async function autosaveDraft() {
+  if (!rideController || !selectedRouteId) return
+  const cp = rideController.getCheckpoint()
+  if (!cp || cp.samples.length < 2) return
+  try {
+    draftRideId = await saveDraftRide(checkpointToSummary(cp), draftRideId)
+  } catch (err) {
+    console.error('下書き自動保存失敗:', err)
+  }
+}
+
+function autosaveTick() {
+  saveRouteSession()
+  autosaveDraft()
+}
+
+function startAutosaveTimer() {
+  stopAutosaveTimer()
+  autosaveTimerId = setInterval(autosaveTick, AUTOSAVE_INTERVAL_MS)
+}
+
+function stopAutosaveTimer() {
+  if (autosaveTimerId == null) return
+  clearInterval(autosaveTimerId)
+  autosaveTimerId = null
 }
 
 function clearRouteSession() { localStorage.removeItem(ROUTE_SESSION_KEY) }
 
-window.addEventListener('beforeunload', () => { if (rideController && selectedRouteId) saveRouteSession() })
+window.addEventListener('beforeunload', () => { if (rideController && selectedRouteId) autosaveTick() })
+window.addEventListener('pagehide',      () => { if (rideController && selectedRouteId) autosaveTick() })
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && rideController && selectedRouteId) autosaveTick()
+})
 
 // 開始距離（複数日ライドの再開地点）に応じて3Dマップ・Mapillary・2Dマップの
 // プレビューを一致させる。ルート選択直後の初期表示、開始距離の確定時
@@ -261,6 +313,9 @@ function handleRideFinished(summary) {
   rideController = null
   clearRouteSession()
   setRidingState(false)
+  stopAutosaveTimer()
+  const finishedDraftId = draftRideId
+  draftRideId = null
   if (summary) {
     const lastDistanceM = summary.samples.at(-1)?.distanceM
     if (summary.routeId != null && lastDistanceM != null) {
@@ -275,7 +330,13 @@ function handleRideFinished(summary) {
         previewAtDistance(lastDistanceM)
       }
     }
-    if (!isDummyTrainer()) rideEndModal.show(summary)
+    if (!isDummyTrainer()) {
+      rideEndModal.show(summary, { existingId: finishedDraftId })
+    } else if (finishedDraftId != null) {
+      // ダミートレーナー使用時は終了モーダルを出さず記録も保存しない
+      // （既存仕様）。走行中に作成された下書きは道連れで破棄する。
+      deleteRide(finishedDraftId).catch(() => {})
+    }
   }
 }
 
@@ -359,6 +420,7 @@ startBtn.addEventListener('click', async () => {
   const altitudeEffectEnabled  = document.getElementById('altitude-effect-toggle').checked
 
   clearRouteSession()
+  draftRideId = null
 
   // onRouteSelected 時に作成済み（index 0 がプレビュー取得済みの状態で引き継ぐ）
   const mapillaryLookahead = selectedMapillaryLookahead
@@ -384,6 +446,7 @@ startBtn.addEventListener('click', async () => {
   })
   rideController.start()
   setRidingState(true)
+  startAutosaveTimer()
 })
 
 pauseResumeBtn.addEventListener('click', () => {
@@ -396,7 +459,7 @@ pauseResumeBtn.addEventListener('click', () => {
     rideController.pause()
     isPaused = true
     pauseResumeBtn.textContent = '▶ 再開'
-    saveRouteSession()
+    autosaveTick()
   }
 })
 
@@ -524,51 +587,112 @@ async function init() {
 
   await loadSettings()
 
-  // ルートセッション復元
+  // ルートセッション復元（走行中断からの復旧、spec.txt 6-2-1節）
+  async function resumeRouteSession(routeSession, record) {
+    const route                 = Route.fromGpx(record.gpxText)
+    const params                = await loadPhysicsParams()
+    const smoothingWindowSec    = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
+    const trainerEnabled        = document.getElementById('trainer-control-toggle').checked
+    const trainerDifficulty     = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
+    const altitudeEffectEnabled = document.getElementById('altitude-effect-toggle').checked
+
+    selectedRoute             = route
+    selectedRouteId           = routeSession.routeId
+    selectedRouteName         = routeSession.routeName
+    selectedReversed          = false // セッション復元時は逆走フラグを保持しないため forward 扱い
+    selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(resampleRoute(route)) : null
+    startBtn.disabled = false
+    eleView?.setRoute(route)
+
+    let mapillaryLookahead = null
+    let mapillaryTracker   = null
+    if (mapillaryUsable && selectedPointsWithBearing) {
+      const cachePrefix  = `${routeSession.routeId}:f`
+      mapillaryLookahead = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
+      mapillaryTracker   = new ActiveIndexTracker(selectedPointsWithBearing)
+    }
+
+    draftRideId = routeSession.draftRideId ?? null
+
+    rideController = new RideController({
+      route, routeId: routeSession.routeId, routeName: routeSession.routeName,
+      params, mapView, hudView, eleView, getLiveData, smoothingWindowSec, trainerDifficulty,
+      altitudeEffectEnabled,
+      ftmsClient: trainerEnabled ? ftmsClient : null,
+      mapillaryLookahead,
+      mapillaryTracker,
+      onFinished: handleRideFinished,
+    })
+    rideController.restoreFrom(routeSession)
+    startAutosaveTimer()
+
+    document.querySelector('.tab-btn[data-tab="route"]')?.click()
+    setRidingState(true)
+    isPaused = true
+    pauseResumeBtn.textContent = '▶ 再開（中断から復元）'
+  }
+
+  function formatRecoverySummary(routeSession) {
+    const distKm   = ((routeSession.simState?.distanceM ?? 0) / 1000).toFixed(2)
+    const elapsedS = Math.round(routeSession.simState?.elapsedSec ?? 0)
+    const h = Math.floor(elapsedS / 3600), m = Math.floor((elapsedS % 3600) / 60), s = elapsedS % 60
+    const timeStr = h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`
+    return `${routeSession.routeName || 'ルート'} ・ ${distKm} km ・ ${timeStr}`
+  }
+
+  // 復旧ダイアログ: [再開する] [ここまでの記録を終了して保存] [破棄] の3択
+  function showRideRecoveryDialog(routeSession, record) {
+    return new Promise((resolve) => {
+      const overlay    = document.getElementById('ride-recovery-overlay')
+      const summaryEl  = document.getElementById('ride-recovery-summary')
+      const resumeBtn  = document.getElementById('ride-recovery-resume-btn')
+      const finishBtn  = document.getElementById('ride-recovery-finish-btn')
+      const discardBtn = document.getElementById('ride-recovery-discard-btn')
+
+      summaryEl.textContent = formatRecoverySummary(routeSession)
+      overlay.classList.add('open')
+
+      const cleanup = () => {
+        overlay.classList.remove('open')
+        resumeBtn.onclick  = null
+        finishBtn.onclick  = null
+        discardBtn.onclick = null
+      }
+
+      resumeBtn.onclick = async () => {
+        cleanup()
+        await resumeRouteSession(routeSession, record)
+        resolve()
+      }
+      finishBtn.onclick = async () => {
+        cleanup()
+        const finishedDraftId = routeSession.draftRideId ?? null
+        const summary = checkpointToSummary(routeSession)
+        clearRouteSession()
+        if (!isDummyTrainer()) {
+          rideEndModal.show(summary, { existingId: finishedDraftId })
+        } else if (finishedDraftId != null) {
+          await deleteRide(finishedDraftId).catch(() => {})
+        }
+        resolve()
+      }
+      discardBtn.onclick = async () => {
+        cleanup()
+        if (routeSession.draftRideId != null) await deleteRide(routeSession.draftRideId).catch(() => {})
+        clearRouteSession()
+        resolve()
+      }
+    })
+  }
+
   try {
     const routeSession = JSON.parse(localStorage.getItem(ROUTE_SESSION_KEY))
     if (routeSession) {
       const record = await getRoute(routeSession.routeId)
       if (record) {
-        const route                 = Route.fromGpx(record.gpxText)
-        const params                = await loadPhysicsParams()
-        const smoothingWindowSec    = (await getDb().get('settings', 'smoothingWindowSec')) ?? 3
-        const trainerEnabled        = document.getElementById('trainer-control-toggle').checked
-        const trainerDifficulty     = (await getDb().get('settings', 'trainerDifficulty')) ?? 0.5
-        const altitudeEffectEnabled = document.getElementById('altitude-effect-toggle').checked
-
-        selectedRoute             = route
-        selectedRouteId           = routeSession.routeId
-        selectedRouteName         = routeSession.routeName
-        selectedReversed          = false // セッション復元時は逆走フラグを保持しないため forward 扱い
-        selectedPointsWithBearing = mapillaryUsable ? precomputeBearings(resampleRoute(route)) : null
-        startBtn.disabled = false
-        eleView?.setRoute(route)
-
-        let mapillaryLookahead = null
-        let mapillaryTracker   = null
-        if (mapillaryUsable && selectedPointsWithBearing) {
-          const cachePrefix  = `${routeSession.routeId}:f`
-          mapillaryLookahead = new MapillaryLookahead(cachePrefix, selectedPointsWithBearing)
-          mapillaryTracker   = new ActiveIndexTracker(selectedPointsWithBearing)
-        }
-
-        rideController = new RideController({
-          route, routeId: routeSession.routeId, routeName: routeSession.routeName,
-          params, mapView, hudView, eleView, getLiveData, smoothingWindowSec, trainerDifficulty,
-          altitudeEffectEnabled,
-          ftmsClient: trainerEnabled ? ftmsClient : null,
-          mapillaryLookahead,
-          mapillaryTracker,
-          onFinished: handleRideFinished,
-        })
-        rideController.restoreFrom(routeSession)
-
-        document.querySelector('.tab-btn[data-tab="route"]')?.click()
-        setRidingState(true)
-        isPaused = true
-        pauseResumeBtn.textContent = '▶ 再開（中断から復元）'
+        await showRideRecoveryDialog(routeSession, record)
       } else {
+        if (routeSession.draftRideId != null) await deleteRide(routeSession.draftRideId).catch(() => {})
         clearRouteSession()
       }
     }

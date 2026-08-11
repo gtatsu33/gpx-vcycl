@@ -437,6 +437,7 @@
     .status-badge.uploaded { background: #0a2218; color: #34d399; }
     .status-badge.pending  { background: #111820; color: #6080a0; }
     .status-badge.failed   { background: #2e0d0d; color: #f87171; }
+    .status-badge.draft    { background: #2e2508; color: #fbbf24; }
 
     /* Ride end modal */
     .summary-grid { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.5rem; }
@@ -1124,6 +1125,18 @@
   </div>
 
   <!-- Strava warning dialog -->
+  <div id="ride-recovery-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>中断した走行があります</h2>
+      <p id="ride-recovery-summary" style="font-size:0.9rem;color:#ccd8e4;"></p>
+      <div class="modal-buttons" style="flex-direction:column; gap:0.5rem;">
+        <button id="ride-recovery-resume-btn">再開する</button>
+        <button id="ride-recovery-finish-btn">ここまでの記録を終了して保存</button>
+        <button id="ride-recovery-discard-btn" style="background:transparent;border-color:#2c4055;color:#6080a0;">破棄</button>
+      </div>
+    </div>
+  </div>
+
   <div id="strava-warning-overlay" class="modal-overlay">
     <div class="modal">
       <h2>Strava 未接続</h2>

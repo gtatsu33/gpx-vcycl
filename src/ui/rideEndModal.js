@@ -1,10 +1,11 @@
-import { saveRide, markUploaded, markUploadFailed } from '../storage/rides.js'
+import { saveRide, finalizeDraftRide, deleteRide, markUploaded, markUploadFailed } from '../storage/rides.js'
 import { buildFit }                                 from '../export/fitWriter.js'
 import { uploadToStrava }                           from '../strava/upload.js'
 import { getConnectionInfo }                        from '../strava/auth.js'
 
 export class RideEndModal {
   #summary      = null
+  #existingId   = null
   #onClose      = null
   #overlay      = document.getElementById('ride-end-overlay')
   #nameInput    = document.getElementById('ride-end-name')
@@ -21,8 +22,15 @@ export class RideEndModal {
     this.#discardBtn.addEventListener('click', () => this.#handleDiscard())
   }
 
-  async show(summary) {
-    this.#summary = summary
+  /**
+   * @param {object} summary
+   * @param {{ existingId?: number|null }} [opts]
+   *   existingId: 走行中の自動保存で作成済みの下書きレコードID。指定時は
+   *   新規追加ではなくそのレコードを確定記録に更新する（6-2-1節参照）。
+   */
+  async show(summary, { existingId = null } = {}) {
+    this.#summary    = summary
+    this.#existingId = existingId
     this.#nameInput.value = generateRideName(summary.routeName)
     this.#renderSummary(summary)
     this.#setStatus('')
@@ -66,7 +74,7 @@ export class RideEndModal {
 
     let rideId
     try {
-      rideId = await saveRide(this.#summary)
+      rideId = await this.#persist()
     } catch (err) {
       this.#setStatus(`保存失敗: ${err.message}`, true)
       this.#setLoading(false)
@@ -100,7 +108,7 @@ export class RideEndModal {
   async #handleSaveOnly() {
     this.#setLoading(true)
     try {
-      await saveRide(this.#summary)
+      await this.#persist()
       this.#close()
     } catch (err) {
       this.#setStatus(`保存失敗: ${err.message}`, true)
@@ -108,7 +116,17 @@ export class RideEndModal {
     }
   }
 
-  #handleDiscard() {
+  #persist() {
+    return this.#existingId != null
+      ? finalizeDraftRide(this.#existingId, this.#summary)
+      : saveRide(this.#summary)
+  }
+
+  async #handleDiscard() {
+    if (this.#existingId != null) {
+      try { await deleteRide(this.#existingId) }
+      catch (err) { console.error('下書き削除失敗:', err) }
+    }
     this.#close()
   }
 
@@ -125,7 +143,8 @@ export class RideEndModal {
 
   #close() {
     this.#overlay.classList.remove('open')
-    this.#summary = null
+    this.#summary    = null
+    this.#existingId = null
     this.#setLoading(false)
     this.#onClose?.()
   }

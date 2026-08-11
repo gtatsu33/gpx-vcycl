@@ -1,4 +1,4 @@
-import { listRides, getRide, deleteRide, markUploaded, markUploadFailed } from '../storage/rides.js'
+import { listRides, getRide, deleteRide, finalizeDraftRide, markUploaded, markUploadFailed } from '../storage/rides.js'
 import { buildFit }       from '../export/fitWriter.js'
 import { uploadToStrava } from '../strava/upload.js'
 import { getConnectionInfo } from '../strava/auth.js'
@@ -28,32 +28,51 @@ function buildRideItem(ride) {
   const distKm   = (ride.totalDistanceM / 1000).toFixed(2)
   const timeStr  = fmtTime(ride.totalElapsedSec)
   const dateStr  = new Date(ride.startedAt).toLocaleString('ja-JP', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
-  const badge    = statusBadge(ride.uploadStatus)
+  const badge    = ride.isDraft ? '中断中' : statusBadge(ride.uploadStatus)
+  const badgeCls = ride.isDraft ? 'draft' : ride.uploadStatus
   const stravaLink = ride.stravaActivityId
     ? `<a href="https://www.strava.com/activities/${ride.stravaActivityId}" target="_blank" class="strava-link">Stravaで見る</a>`
     : ''
 
   el.innerHTML = `
     <div class="ride-info">
-      <span class="ride-name">${escHtml(ride.routeName)} <span class="status-badge ${ride.uploadStatus}">${badge}</span></span>
+      <span class="ride-name">${escHtml(ride.routeName)} <span class="status-badge ${badgeCls}">${badge}</span></span>
       <span class="ride-meta">${dateStr} &middot; ${distKm} km &middot; ${timeStr} &middot; ${ride.avgPowerW} W ${stravaLink}</span>
     </div>
     <div class="ride-actions">
-      ${ride.uploadStatus !== 'uploaded' ? '<button class="upload-btn small-btn">アップロード</button>' : ''}
+      ${ride.isDraft ? '<button class="draft-finish-btn small-btn">記録を確定</button>' : ''}
+      ${!ride.isDraft && ride.uploadStatus !== 'uploaded' ? '<button class="upload-btn small-btn">アップロード</button>' : ''}
       <button class="fit-dl-btn small-btn">FIT</button>
-      <button class="ride-del-btn small-btn">削除</button>
+      <button class="ride-del-btn small-btn">${ride.isDraft ? '破棄' : '削除'}</button>
     </div>
   `
 
   el.querySelector('.fit-dl-btn').addEventListener('click', () => downloadFit(ride))
   el.querySelector('.ride-del-btn').addEventListener('click', async () => {
-    if (!confirm(`「${ride.routeName}」のライド記録を削除しますか？`)) return
+    const msg = ride.isDraft
+      ? `「${ride.routeName}」の中断中の記録を破棄しますか？`
+      : `「${ride.routeName}」のライド記録を削除しますか？`
+    if (!confirm(msg)) return
     await deleteRide(ride.id)
     await renderRideHistory()
   })
   el.querySelector('.upload-btn')?.addEventListener('click', () => reupload(ride))
+  el.querySelector('.draft-finish-btn')?.addEventListener('click', () => finalizeDraft(ride))
 
   return el
+}
+
+// 中断中の下書きを確定記録に更新する（履歴タブから、走行を再開せずに済ませる経路）
+async function finalizeDraft(ride) {
+  const fullRide = await getRide(ride.id)
+  await finalizeDraftRide(ride.id, {
+    routeId:   fullRide.routeId,
+    routeName: fullRide.routeName,
+    startedAt: new Date(fullRide.startedAt),
+    endedAt:   new Date(fullRide.endedAt),
+    samples:   fullRide.samples,
+  })
+  await renderRideHistory()
 }
 
 async function reupload(ride) {

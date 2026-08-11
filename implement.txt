@@ -302,19 +302,33 @@ Vite はクライアントに公開する環境変数に VITE_ プレフィッ�
     samples: [{ timestampMs, lat?, lon?, elevationM?, distanceM,
                 velocityMs, gradientPercent?, powerW, cadenceRpm,
                 heartRateBpm }],
+    isDraft: boolean,
     uploadStatus: 'pending' | 'uploaded' | 'failed',
     uploadedAt, stravaActivityId, uploadError,
   }
   （lat/lon/elevationM/gradientPercentはルートモードのみ。ワークアウト
-    記録には含まれない）
+    記録には含まれない。isDraftは走行中の自動保存で作成され終了操作が
+    まだ行われていない記録の場合true。DBスキーマ上の新規ストア追加は
+    不要（IndexedDBはフィールド単位でスキーマレス）。9-4節参照）
 
   API（storage/rides.js）:
-    saveRide(summary) → id              集計値を計算して保存
+    saveRide(summary) → id              集計値を計算しisDraft:falseで保存
+    saveDraftRide(summary, existingId=null) → id
+      走行中の定期自動保存用。buildRideRecord(summary, isDraft:true)を
+      existingId指定時はput（上書き更新）、未指定時はadd（新規作成）。
+      1走行につき最初のsaveDraftRide呼び出しで採番されたidを以降の
+      呼び出しでexistingIdとして渡すことで、同一レコードを使い回し
+      履歴に重複を作らない。
+    finalizeDraftRide(id, summary) → id
+      下書きレコードをisDraft:falseの確定記録に更新（put、アップロード
+      状態は'pending'にリセット）。呼び出し元（main.js/rideEndModal.js/
+      rideHistory.js）はfinalizeDraftRide後、必要ならuploadToStrava→
+      markUploaded/Failedを続けて呼ぶ。
     listRides() → record[]              startedAt降順でソート
     getRide(id) → record
     markUploaded(rideId, stravaActivityId) → key
     markUploadFailed(rideId, errorMsg) → key
-    deleteRide(id) → void
+    deleteRide(id) → void                下書きの破棄にも流用する
 
 ────────────────────────────────────────
 5-3. workouts ストア（レコード形状）
@@ -1080,20 +1094,117 @@ constants.js に集約する。
   <name>より remoteMetaMap の displayName を優先する。
 
 ────────────────────────────────────────
+10-7-1. main.js ライドセッション永続化・復旧（spec.txt 6-2-1節）
+────────────────────────────────────────
+  目的: beforeunloadはホームボタン操作・OSによるアプリ強制終了（taskkill
+  等）ではモバイルブラウザ含め発火しないことが多く、これのみに頼った
+  保存では走行データが失われる。定期タイマーによる自動保存を主たる
+  防御線とし、beforeunload/pagehide/visibilitychangeは補助的に即時
+  保存を試みるのみとする。
+
+  永続化される2つの領域（ライフサイクルが異なる）:
+    - チェックポイント（localStorage, キー'route-session'）:
+      「再開」専用。単一スロットのため新しいライド開始で上書きされる。
+      { routeId, routeName, startedAt, samples, simState,
+        draftRideId } の形（draftRideIdはRideController.getCheckpoint()
+        の返り値に自前で追加）。
+    - 下書きレコード（IndexedDB rides ストア, isDraft:true）:
+      履歴タブに常時表示され、チェックポイントが上書き・消失した後も
+      「終了として確定・Stravaアップロード・削除」ができる
+      （10-8節rideHistory.js参照）。
+
+  main.jsモジュールトップレベル変数:
+    draftRideId    走行中の下書きレコードID（未作成ならnull）
+    autosaveTimerId 定期保存タイマーのID
+    AUTOSAVE_INTERVAL_MS = 20000（20秒間隔）
+
+  関数:
+    checkpointToSummary(cp) → {routeId, routeName, startedAt(Date化),
+      endedAt: new Date()（呼び出し時点を暫定終了時刻とする）, samples}
+      下書き保存・終了モーダル表示の両方でチェックポイントから
+      summary形状を組み立てる共通処理。
+    saveRouteSession() → getCheckpoint()に{draftRideId}をマージして
+      localStorageへ同期書き込み。
+    autosaveDraft() → saveDraftRide(checkpointToSummary(cp), draftRideId)
+      を呼び、返ったidをdraftRideIdへ書き戻す（初回はadd、以降はput）。
+      samples.length<2の間は保存しない。
+    autosaveTick() → saveRouteSession()とautosaveDraft()を両方呼ぶ。
+      startBtn押下後・restoreFrom後にstartAutosaveTimer()で
+      setInterval(autosaveTick, AUTOSAVE_INTERVAL_MS)を開始し、
+      handleRideFinished内でstopAutosaveTimer()により停止する。
+      pauseResumeBtnの一時停止時、beforeunload/pagehide/
+      visibilitychange(hidden)でも即時にautosaveTick()を呼ぶ
+      （IndexedDB書き込みは非同期のためpagehideでは完了を保証
+      できないが、直近の定期保存が既にディスクへ同期済みのため実害は
+      小さい。localStorageへの書き込みは同期的で必ず完了する）。
+
+  handleRideFinished(summary):
+    stopAutosaveTimer()を呼び、finishedDraftId = draftRideId を退避
+    してdraftRideId = null にリセット。isDummyTrainer()がfalseなら
+    rideEndModal.show(summary, {existingId: finishedDraftId})で
+    下書きを確定記録に更新させる。isDummyTrainer()がtrueの場合は
+    元々終了モーダルを出さず記録も保存しない仕様のため、
+    finishedDraftIdが存在すればdeleteRide()で道連れに削除する
+    （自動保存はisDummyTrainerを見ずに常時動くため、ここで破棄しないと
+    ダミートレーナーのテスト走行が下書きのまま履歴に残り続けてしまう）。
+
+  init()内の復旧フロー（旧: 無条件で即座にrestoreFromしていたものを
+  ダイアログ選択式に変更）:
+    routeSession = localStorage['route-session']をパースし存在すれば
+    getRoute(routeSession.routeId)でルート実体を確認。
+      - ルートが見つからない場合: draftRideIdがあればdeleteRide()、
+        clearRouteSession()のみ行い、ダイアログは出さない。
+      - 見つかった場合: showRideRecoveryDialog(routeSession, record)を
+        awaitして、以下いずれかの選択をユーザーに委ねる。
+
+    showRideRecoveryDialog(routeSession, record) → Promise
+      #ride-recovery-overlay（index.html）を表示し、3ボタンに
+      onclickを設定、選択後にcleanup()してresolve()するPromiseラッパー。
+        [再開する] resumeRouteSession(routeSession, record)を呼ぶ
+          （旧initブロックの中身をそのまま関数化したもの。draftRideIdを
+          routeSession.draftRideIdから引き継ぎ、startAutosaveTimer()を
+          呼ぶ点が新規）。
+        [ここまでの記録を終了して保存]
+          checkpointToSummary(routeSession)でsummary化し、
+          clearRouteSession()した上でrideEndModal.show(summary,
+          {existingId: routeSession.draftRideId})。ダミートレーナー時は
+          モーダルを出さずdeleteRide()のみ。
+          （走行を再開させずにそのまま終了モーダルへ直行させることで、
+          「もう一度アプリを開いて指でペダルを漕ぐ真似をする」ような
+          再開操作なしに履歴・Strava保存まで到達できる）。
+        [破棄]
+          routeSession.draftRideIdがあればdeleteRide()、
+          clearRouteSession()。
+
+────────────────────────────────────────
 10-8. rideEndModal.js / rideHistory.js
 ────────────────────────────────────────
   class RideEndModal({onClose})
-    show(summary) → 既定名生成、Strava接続状況に応じてアップロード
-      ボタンの有効/無効・ラベルを切替、モーダル表示
+    show(summary, {existingId=null}={}) → 既定名生成、Strava接続状況に
+      応じてアップロードボタンの有効/無効・ラベルを切替、モーダル表示。
+      existingIdは走行中の自動保存で作成済みの下書きレコードID
+      （main.js draftRideId、10-7-1節）。#persist()内部で
+      existingId!=nullならfinalizeDraftRide(existingId, summary)、
+      nullならsaveRide(summary)を呼び分け、下書きの重複保存を防ぐ。
     アップロード成功時は2秒後に自動クローズ、失敗時はローカル保存済み
       である旨のエラーメッセージを表示したまま開いておく
+    #handleDiscard()（[破棄]ボタン）はexistingId!=nullの場合
+      deleteRide(existingId)で下書きレコードも削除してから閉じる
+      （自動保存で既にIndexedDBへ書かれているため、単にモーダルを
+      閉じるだけでは下書きが履歴に残り続けてしまう）。
 
   renderRideHistory() → #ride-history-listへ一覧描画。各行に
-    アップロード/FIT/削除ボタン。reupload()はStrava未接続ならalert、
-    接続済みなら prompt() でアップロード名を編集可能にする
-    （初期値はRideEndModalと同じ generateRideName(routeName)、
-    RideEndModalからexportして共有。キャンセル時は何もしない）。
-    その後FIT再生成してuploadToStrava→markUploaded/Failed。
+    アップロード/FIT/削除ボタン（ride.isDraft時はアップロード/FITの
+    代わりに「記録を確定」ボタン、削除ボタンのラベルは「破棄」）。
+    reupload()はStrava未接続ならalert、接続済みなら prompt() で
+    アップロード名を編集可能にする（初期値はRideEndModalと同じ
+    generateRideName(routeName)、RideEndModalからexportして共有。
+    キャンセル時は何もしない）。その後FIT再生成してuploadToStrava→
+    markUploaded/Failed。
+    finalizeDraft(ride) → 履歴タブから、走行を再開せずに下書きを確定
+    記録へ変える経路。getRide(ride.id)でsamples等を取得しsummary形状
+    に組み直してfinalizeDraftRide(ride.id, summary)を呼ぶ。確定後は
+    通常のライドと同様にreupload()等の操作が可能になる。
 
 ────────────────────────────────────────
 10-9. workoutTab.js

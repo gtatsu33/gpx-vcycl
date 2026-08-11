@@ -1,8 +1,8 @@
 import { getDb } from './db.js'
 
-export async function saveRide(summary) {
+function buildRideRecord(summary, isDraft) {
   const { samples, startedAt, endedAt } = summary
-  return getDb().add('rides', {
+  return {
     routeId:          summary.routeId,
     routeName:        summary.routeName,
     startedAt,
@@ -13,11 +13,34 @@ export async function saveRide(summary) {
     avgCadenceRpm:    Math.round(avgOf(samples.filter(s => s.cadenceRpm > 0), s => s.cadenceRpm)),
     avgHeartRateBpm:  Math.round(avgOf(samples.filter(s => s.heartRateBpm > 0), s => s.heartRateBpm)),
     samples,
+    isDraft,
     uploadStatus:     'pending',
     uploadedAt:       null,
     stravaActivityId: null,
     uploadError:      null,
-  })
+  }
+}
+
+export async function saveRide(summary) {
+  return getDb().add('rides', buildRideRecord(summary, false))
+}
+
+// 走行中の定期自動保存。existingId未指定なら新規下書きレコードを作成し、
+// 指定時はそのレコードを上書き更新する（1走行につき1レコードを使い回す）。
+export async function saveDraftRide(summary, existingId = null) {
+  const record = buildRideRecord(summary, true)
+  if (existingId != null) {
+    await getDb().put('rides', { ...record, id: existingId })
+    return existingId
+  }
+  return getDb().add('rides', record)
+}
+
+// 下書きレコードを確定記録に更新する（アップロード状態は未送信にリセット）。
+export async function finalizeDraftRide(id, summary) {
+  const record = buildRideRecord(summary, false)
+  await getDb().put('rides', { ...record, id })
+  return id
 }
 
 export async function listRides() {
