@@ -198,11 +198,15 @@ openRemotePicker()
   │     → Map<file_key, {display_name, distance_m, elevation_gain_m}>
   │
   └─ 表示
+       Storage一覧のうち、route_filesにfile_keyが存在するものだけを表示
+       （DB未登録のfile_keyはスキップ）
        display_name があれば使用、なければ file_key（拡張子除去）をフォールバック
        distance_m / elevation_gain_m があればサブテキストに表示
 ```
 
 2回のAPIコールで完結。GPXファイル本体のダウンロードは選択後のみ。
+DBメタ取得（SELECT）が失敗した場合は空Map扱いとなり、一覧は0件表示になる
+（Storage全件へのフォールバックは行わない）。
 
 ---
 
@@ -221,11 +225,15 @@ openRemoteZwoPicker()
   │     → Map<file_key, {display_name, duration_s}>
   │
   └─ 表示
+       Storage一覧のうち、workout_filesにfile_keyが存在するものだけを表示
+       （DB未登録のfile_keyはスキップ）
        display_name があれば使用、なければ file_key（拡張子除去）をフォールバック
        duration_s があればサブテキストに表示
 ```
 
 2回のAPIコールで完結。ZWOファイル本体のダウンロードは選択後のみ。
+DBメタ取得（SELECT）が失敗した場合は空Map扱いとなり、一覧は0件表示になる
+（Storage全件へのフォールバックは行わない）。
 
 ---
 

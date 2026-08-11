@@ -207,21 +207,23 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, isDummyTraine
     try {
       [files, metaMap] = await Promise.all([
         listRemoteZwoFiles(),
-        fetchWorkoutFilesMeta().catch(() => new Map()),
+        fetchWorkoutFilesMeta().catch(() => new Map()), // メタ取得失敗時は空Map→DB未登録扱いで一覧0件になる
       ])
     } catch (err) {
       remoteStatus.textContent = `取得に失敗しました: ${err.message}`
       return
     }
 
-    if (files.length === 0) {
+    const registeredFiles = files.filter((f) => metaMap.has(f.name))
+
+    if (registeredFiles.length === 0) {
       remoteStatus.textContent = 'ZWOファイルが見つかりませんでした'
       return
     }
 
-    remoteStatus.textContent = `${files.length} 件`
+    remoteStatus.textContent = `${registeredFiles.length} 件`
 
-    for (const file of files) {
+    for (const file of registeredFiles) {
       const meta = metaMap.get(file.name)
       const fileBaseName = file.name.replace(/\.zwo$/i, '')
       const btn = document.createElement('button')

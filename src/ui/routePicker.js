@@ -82,21 +82,23 @@ export async function initRoutePicker(mapView, { onRouteSelected, onStartDistanc
     try {
       [files, remoteMetaMap] = await Promise.all([
         listRemoteGpxFiles(),
-        fetchRouteFilesMeta().catch(() => new Map()), // メタ取得失敗時はfile_keyフォールバックのみで表示続行
+        fetchRouteFilesMeta().catch(() => new Map()), // メタ取得失敗時は空Map→DB未登録扱いで一覧0件になる
       ])
     } catch (err) {
       remoteStatus.textContent = `取得に失敗しました: ${err.message}`
       return
     }
 
-    if (files.length === 0) {
+    const registeredFiles = files.filter((f) => remoteMetaMap.has(f.name))
+
+    if (registeredFiles.length === 0) {
       remoteStatus.textContent = 'GPXファイルが見つかりませんでした'
       return
     }
 
-    remoteStatus.textContent = `${files.length} 件`
+    remoteStatus.textContent = `${registeredFiles.length} 件`
 
-    for (const file of files) {
+    for (const file of registeredFiles) {
       const meta = remoteMetaMap.get(file.name)
       const fileBaseName = file.name.replace(/\.gpx$/i, '').replace(/_gne$/i, '')
       const btn = document.createElement('button')

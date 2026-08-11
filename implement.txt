@@ -1112,11 +1112,14 @@ constants.js に集約する。
 
   リモートGPX一覧（openRemotePicker）: listRemoteGpxFiles()と
   fetchRouteFilesMeta()をPromise.all()で並行取得し、file_key
-  （=Storageのfile.name）をキーに突き合わせて表示する。各項目は
-  表示名（displayName、無ければfile_keyの拡張子除去）＋距離・獲得
-  標高のサブテキスト（.remote-gpx-item内、.remote-gpx-name/
-  .remote-gpx-meta）。メタ取得（fetchRouteFilesMeta）が失敗しても
-  一覧表示自体は継続する（catchして空Mapにフォールバック）。
+  （=Storageのfile.name）をキーに突き合わせて表示する。
+  route_filesにfile_keyが存在するもの（remoteMetaMap.has(file.name)）
+  のみを表示対象とし、DB未登録のStorageファイルはスキップする。
+  各項目は表示名（displayName、無ければfile_keyの拡張子除去）＋距離・
+  獲得標高のサブテキスト（.remote-gpx-item内、.remote-gpx-name/
+  .remote-gpx-meta）。メタ取得（fetchRouteFilesMeta）が失敗した場合は
+  catchして空Mapにフォールバックするため、結果的に一覧は0件表示になる
+  （Storage全件表示へのフォールバックは行わない）。
   ダウンロード時（loadRemoteFile）のルート名初期値も、GPX内の
   <name>より remoteMetaMap の displayName を優先する。
 
@@ -1282,8 +1285,11 @@ constants.js に集約する。
 
   リモートZWO一覧（openRemoteZwoPicker）: routePicker.jsのopenRemotePicker
   と対称の実装。listRemoteZwoFiles()とfetchWorkoutFilesMeta()を
-  Promise.all()で並行取得しfile_keyで突き合わせ、.remote-gpx-item
-  クラス（GPXと共用）で表示。ダウンロード後（loadRemoteZwo）は、GPXと
+  Promise.all()で並行取得しfile_keyで突き合わせ、workout_filesに
+  file_keyが存在するもの（metaMap.has(file.name)）のみを表示対象とし、
+  .remote-gpx-itemクラス（GPXと共用）で表示。DB未登録のStorageファイル
+  はスキップする。メタ取得失敗時も空Mapフォールバックのため一覧は0件
+  表示になる（GPX版と同じ挙動）。ダウンロード後（loadRemoteZwo）は、GPXと
   異なりルート名確認モーダルを挟まず、displayName（無ければZWO内
   <name>、それも無ければfile_key）で即座にsaveWorkout()する。
 
