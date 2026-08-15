@@ -3,7 +3,8 @@ import * as THREE from 'three'
 const ROAD_HALF_W  = 8.0
 const SHOULDER_W   = 2.0
 const Y_EXAG       = 2.5    // vertical exaggeration for visual impact
-const CAM_HEIGHT   = Y_EXAG * 3.0  // 3.0m real above road (world-space scaled)
+const CAM_HEIGHT   = 3.0    // 3.0m real above road (NOT scaled by Y_EXAG — raw world-space offset)
+const LANE_OFFSET_M = ROAD_HALF_W / 2  // 4.0m left of centerline = 25% from left edge of road
 const LOOK_AHEAD   = 5     // m horizontal — drives left/right turn response
 const LERP_FACTOR  = 0.25
 const FADE_DIST    = 280    // m — sign visibility cutoff
@@ -183,11 +184,15 @@ export class EleView {
     if (!this.#pts3D) return
     const cam  = interpPt(this.#pts3D, distM)
     const look = interpPt(this.#pts3D, distM + LOOK_AHEAD)
+    const { rx, rz } = perpAt(this.#pts3D, distM)
+    // Shift eye + gaze together toward the left-lane center (25% from left edge),
+    // keeping the gaze direction parallel to the centerline.
+    const ox = rx * LANE_OFFSET_M, oz = rz * LANE_OFFSET_M
     const eyeY = cam.y + CAM_HEIGHT
-    this.#camera.position.set(cam.x, eyeY, cam.z)
+    this.#camera.position.set(cam.x + ox, eyeY, cam.z + oz)
     // Vertical gaze fixed at rider eye level — road rises/falls relative to this line.
     // Horizontal (x/z) tracks the route for turn responsiveness.
-    this.#camera.lookAt(look.x, eyeY + LOOK_Y_OFFSET, look.z)
+    this.#camera.lookAt(look.x + ox, eyeY + LOOK_Y_OFFSET, look.z + oz)
   }
 
   #buildSigns() {
@@ -306,14 +311,20 @@ export class EleView {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// 道路端の3D座標を返す。side: +1=右, -1=左
-function signPos(pts3D, distM, side) {
-  const pt   = interpPt(pts3D, distM)
+// 進行方向に対する法線ベクトルを返す。+rx/+rz側=左、-rx/-rz側=右
+// （buildRibbonMesh/buildWallMeshのsmoothedPerps()と同じ符号規則）
+function perpAt(pts3D, distM) {
   const prev = interpPt(pts3D, distM - 1)
   const next = interpPt(pts3D, distM + 1)
   const tx = next.x - prev.x, tz = next.z - prev.z
   const len = Math.sqrt(tx * tx + tz * tz) || 1
-  const rx =  tz / len, rz = -tx / len
+  return { rx: tz / len, rz: -tx / len }
+}
+
+// 道路端の3D座標を返す。side: +1=左, -1=右
+function signPos(pts3D, distM, side) {
+  const pt = interpPt(pts3D, distM)
+  const { rx, rz } = perpAt(pts3D, distM)
   const offset = ROAD_HALF_W + 0.5
   return { sx: pt.x + rx * offset * side, sy: pt.y, sz: pt.z + rz * offset * side }
 }

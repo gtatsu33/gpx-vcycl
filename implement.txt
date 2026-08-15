@@ -964,8 +964,18 @@ constants.js に集約する。
       再計算）。これによりGPXの点密度に関わらず、実際にトレーナーへ
       送られる勾配（50mバケット）の境界と道路の色境界が一致する。
     ROAD_HALF_W=8.0m, Y_EXAG=2.5（標高の視覚的誇張）,
-      CAM_HEIGHT=Y_EXAG×3.0, LOOK_AHEAD=5m, AHEAD_M=800/BEHIND_M=30
+      CAM_HEIGHT=3.0m（実寸、Y_EXAGは掛けない生のワールド座標オフセット）,
+      LOOK_AHEAD=5m, AHEAD_M=800/BEHIND_M=30
       （距離ウィンドウ外はdrawRangeで描画スキップ、パフォーマンス対策）
+    カメラ左右位置: センターラインではなく左車線中心
+      （左端からROAD_HALF_Wの半分＝LANE_OFFSET_M=4.0m＝道路全幅の25%）
+      にオフセット。#updateCameraAt()内でperpAt()により進行方向の法線
+      （+rx/+rz=左、-rx/-rz=右。three.jsの右手系Y-up規則での
+      cross(forward, up)から導出。buildRibbonMesh等のsmoothedPerps()と
+      同じ符号規則だが、そちらの near-left/near-right という変数名は
+      実際の左右とは逆になっている点に注意）を求め、カメラ位置・lookAt
+      注視点の両方を同じ量だけ左方向にシフトすることで視線の向きは
+      センターラインと平行のまま視点だけ左車線中心にずれる
 
 ────────────────────────────────────────
 10-5. map.js（2Dマップ、Leaflet）
