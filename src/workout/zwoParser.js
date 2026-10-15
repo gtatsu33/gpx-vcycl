@@ -71,11 +71,12 @@ function parseIntervals(el) {
 
 function parseFreeRide(el) {
   const dur = attr(el, 'Duration', 'duration') ?? 0
+  const pow = attr(el, 'Power', 'power') ?? 0   // 指定あり: ERG OFFの目標表示用
   return {
     type: 'free',
     durationS: dur,
-    powerLowFtp: 0,
-    powerHighFtp: 0,
+    powerLowFtp: pow,
+    powerHighFtp: pow,
     cadenceRpm: cadence(el),
   }
 }

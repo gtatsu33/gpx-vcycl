@@ -725,8 +725,9 @@ constants.js に集約する。
         の値関係のみで決まる）→ {type:'ramp', durationS, powerLowFtp,
         powerHighFtp, cadenceRpm}
       IntervalsT → Repeat回、on区間・off区間のsteadyセグメントに展開
-      FreeRide → {type:'free', durationS, powerLowFtp:0, powerHighFtp:0,
-        cadenceRpm}
+      FreeRide → {type:'free', durationS, powerLowFtp, powerHighFtp,
+        cadenceRpm}（Power属性があれば両方にその値、なければ0。
+        値はERG OFFでの目標表示専用）
       その他（TextEvent等）は無視
     属性読み取りはattr(el, 'Name','name')のように大小文字両対応。
 
@@ -745,7 +746,7 @@ constants.js に集約する。
   calcTargetW(seg, t, ftpW) → number|null
     steady: round(powerLowFtp×ftpW)
     ramp:   線形補間 (powerLowFtp+(powerHighFtp-powerLowFtp)×t)×ftpW
-    free:   null（ERGモード解除の合図）
+    free:   Power指定あり→round(powerLowFtp×ftpW)（表示専用）、なし→null
 
   class WorkoutController（route/mapView/hudView非依存。距離・速度は
   勾配0固定でphysics.stepVelocityを流用した簡易参考値扱い）
@@ -773,7 +774,9 @@ constants.js に集約する。
     6. locateSegment→calcTargetWでtargetPowerW算出
     7. FTMS制御可能ならtargetPowerWをsetTargetPower（ERGモード、
        ERG_UPDATE_MS毎または変化量≥ERG_THRESHOLD_Wで即時送信）。
-       target=null（FreeRide）時は#resetErg()
+       FreeRide区間は目標値の有無によらず#updateErgにnullを渡し
+       #resetErg()（ERG OFF）。HUD/グラフ/区間リストには目標Wを表示し、
+       パワー乖離アラートはfree区間では判定しない
     8. onStateUpdate毎tick発火（10Hz）
     9. 非停止中のみ1Hzサンプル記録: {timestampMs, powerW, cadenceRpm,
        heartRateBpm, distanceM, velocityMs}（位置・標高・勾配は含まない）

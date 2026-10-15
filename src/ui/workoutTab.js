@@ -48,6 +48,11 @@ function renderProfileSvg(svg, segments, w = 400, h = 60) {
       const midFtp = (seg.powerLowFtp + seg.powerHighFtp) / 2
       rects.push(`<polygon points="${pts.join(' ')}" fill="${ftpColor(midFtp)}"/>`)
       x += seg.durationS
+    } else if (seg.type === 'free' && seg.powerHighFtp > 0) {
+      // ERG OFFの目標表示: 目標W高さで半透明＋破線枠
+      const by = scaleY(seg.powerHighFtp)
+      rects.push(`<rect x="${toX(x).toFixed(1)}" y="${by.toFixed(1)}" width="${toX(seg.durationS).toFixed(1)}" height="${(scaleY(0) - by).toFixed(1)}" fill="${ftpColor(seg.powerHighFtp)}" fill-opacity="0.35" stroke="${ftpColor(seg.powerHighFtp)}" stroke-dasharray="3,2"/>`)
+      x += seg.durationS
     } else if (seg.type === 'free') {
       rects.push(`<rect x="${toX(x).toFixed(1)}" y="${(h * 0.7).toFixed(1)}" width="${toX(seg.durationS).toFixed(1)}" height="${(h * 0.3).toFixed(1)}" fill="#444" opacity="0.5"/>`)
       x += seg.durationS
@@ -84,13 +89,15 @@ function segLabel(seg, ftpW) {
   switch (seg.type) {
     case 'steady':    return `${w(seg.powerLowFtp)}  ${fmtDurS(seg.durationS)}`
     case 'ramp':      return `${w(seg.powerLowFtp)} → ${w(seg.powerHighFtp)}  ${fmtDurS(seg.durationS)}`
-    case 'free':      return `Free  ${fmtDurS(seg.durationS)}`
+    case 'free':      return seg.powerLowFtp > 0
+      ? `Free (目標 ${w(seg.powerLowFtp)})  ${fmtDurS(seg.durationS)}`
+      : `Free  ${fmtDurS(seg.durationS)}`
     default:          return fmtDurS(seg.durationS)
   }
 }
 
 function segFtpForColor(seg) {
-  if (seg.type === 'free') return 0
+  if (seg.type === 'free') return seg.powerHighFtp
   return seg.powerHighFtp
 }
 
@@ -462,9 +469,9 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, isDummyTraine
   function updateAlerts(state, targetCadRpm) {
     const alerts = []
 
-    // Power deviation (ERGモード時)
+    // Power deviation (ERGモード時のみ。FreeRide区間は目安表示のため判定しない)
     const powerEl = document.getElementById('wo-hud-power')
-    if (state.targetPowerW !== null && state.powerW > 5) {
+    if (state.targetPowerW !== null && state.segment?.type !== 'free' && state.powerW > 5) {
       const diff = Math.abs(state.powerW - state.targetPowerW)
       const pct  = diff / state.targetPowerW
       if (pct > 0.1 || diff > 15) {

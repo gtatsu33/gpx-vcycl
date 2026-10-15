@@ -31,7 +31,7 @@ function locateSegment(segments, elapsedS) {
  * @param {object} seg
  * @param {number} t    区間内進行率 [0–1]
  * @param {number} ftpW FTP in watts
- * @returns {number | null}  null = FreeRide (ERG解除)
+ * @returns {number | null}  null = 目標なし (FreeRideでPower指定なし)
  */
 function calcTargetW(seg, t, ftpW) {
   switch (seg.type) {
@@ -42,7 +42,7 @@ function calcTargetW(seg, t, ftpW) {
       return Math.round(ftp * ftpW)
     }
     case 'free':
-      return null
+      return seg.powerLowFtp > 0 ? Math.round(seg.powerLowFtp * ftpW) : null
   }
   return null
 }
@@ -246,8 +246,9 @@ export class WorkoutController {
     const targetPowerW = calcTargetW(seg, t, this.#ftpW)
 
     // ERG制御（有効に動いているときのみ）
+    // FreeRide区間は目標Wがあっても表示のみ（ERG OFF）
     if (!effectivePaused && this.#ftmsClient?.isControllable) {
-      this.#updateErg(targetPowerW, now)
+      this.#updateErg(seg.type === 'free' ? null : targetPowerW, now)
     }
 
     // 状態コールバック (10Hz)

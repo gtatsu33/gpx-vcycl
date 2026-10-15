@@ -1,0 +1,22 @@
+<workout_file>
+    <author>tatsu</author>
+    <name>Tabata 4 sets FreeRide target (10 min)</name>
+    <description>Warmup 4 min, Tabata 4 sets (20s FreeRide, Power attribute = 170% FTP target for custom app / 10s rest), Cooldown 4 min. Total 10 min.</description>
+    <sportType>bike</sportType>
+    <tags>
+        <tag name="HIIT"/>
+        <tag name="Tabata"/>
+    </tags>
+    <workout>
+        <Warmup Duration="240" PowerLow="0.40" PowerHigh="0.65"/>
+        <FreeRide Duration="20" FlatRoad="1" Power="1.70"><textevent timeoffset="0" message="ALL OUT!"/></FreeRide>
+        <SteadyState Duration="10" Power="0.40"/>
+        <FreeRide Duration="20" FlatRoad="1" Power="1.70"><textevent timeoffset="0" message="ALL OUT!"/></FreeRide>
+        <SteadyState Duration="10" Power="0.40"/>
+        <FreeRide Duration="20" FlatRoad="1" Power="1.70"><textevent timeoffset="0" message="ALL OUT!"/></FreeRide>
+        <SteadyState Duration="10" Power="0.40"/>
+        <FreeRide Duration="20" FlatRoad="1" Power="1.70"><textevent timeoffset="0" message="ALL OUT!"/></FreeRide>
+        <SteadyState Duration="10" Power="0.40"/>
+        <Cooldown Duration="240" PowerLow="0.55" PowerHigh="0.30"/>
+    </workout>
+</workout_file>
