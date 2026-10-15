@@ -728,7 +728,9 @@ constants.js に集約する。
       FreeRide → {type:'free', durationS, powerLowFtp, powerHighFtp,
         cadenceRpm}（Power属性があれば両方にその値、なければ0。
         値はERG OFFでの目標表示専用）
-      その他（TextEvent等）は無視
+      各セグメントの子要素<textevent timeoffset message>を
+        textEvents:[{offsetS,message}]（offsetS昇順）として保持
+        （IntervalsT展開分は空）。その他の未対応タグは無視
     属性読み取りはattr(el, 'Name','name')のように大小文字両対応。
 
   totalDurationS(segments) → 合計秒数
@@ -777,6 +779,8 @@ constants.js に集約する。
        FreeRide区間は目標値の有無によらず#updateErgにnullを渡し
        #resetErg()（ERG OFF）。HUD/グラフ/区間リストには目標Wを表示し、
        パワー乖離アラートはfree区間では判定しない
+    7b. 区間内経過秒数>=offsetSの最新textEventをactiveMessageとし
+       （無ければnull）、onStateUpdateのstateに含める
     8. onStateUpdate毎tick発火（10Hz）
     9. 非停止中のみ1Hzサンプル記録: {timestampMs, powerW, cadenceRpm,
        heartRateBpm, distanceM, velocityMs}（位置・標高・勾配は含まない）

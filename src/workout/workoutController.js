@@ -245,6 +245,12 @@ export class WorkoutController {
     const seg         = this.#segments[idx]
     const targetPowerW = calcTargetW(seg, t, this.#ftpW)
 
+    // 区間内経過秒数がoffsetSに達した最新のtextEventを表示対象にする
+    const segElapsedS = t * seg.durationS
+    const activeMessage = (seg.textEvents ?? [])
+      .filter((ev) => ev.offsetS <= segElapsedS)
+      .at(-1)?.message ?? null
+
     // ERG制御（有効に動いているときのみ）
     // FreeRide区間は目標Wがあっても表示のみ（ERG OFF）
     if (!effectivePaused && this.#ftmsClient?.isControllable) {
@@ -258,6 +264,7 @@ export class WorkoutController {
       segmentIdx:  idx,
       segment:     seg,
       targetPowerW,
+      activeMessage,
       powerW:      smoothPowerW,
       cadenceRpm:  smoothCadence,
       heartRateBpm,

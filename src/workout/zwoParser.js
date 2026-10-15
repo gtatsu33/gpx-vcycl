@@ -8,6 +8,7 @@
  *   powerLowFtp: number,          // 開始FTP比率 (0.0–x.xx)
  *   powerHighFtp: number,         // 終了FTP比率（steadyは同値）
  *   cadenceRpm:  number | null,   // 指定がなければnull
+ *   textEvents:  [{offsetS, message}], // 区間先頭からのオフセット順（IntervalsT展開分は空）
  *   // intervals のみ:
  *   onDurationS:  number | undefined,
  *   offDurationS: number | undefined,
@@ -27,6 +28,17 @@ function attr(el, ...names) {
 
 function cadence(el) {
   return attr(el, 'Cadence', 'cadence') ?? null
+}
+
+function parseTextEvents(el) {
+  const events = []
+  for (const child of el.children) {
+    if (child.tagName.toLowerCase() !== 'textevent') continue
+    const message = child.getAttribute('message') ?? child.getAttribute('Message')
+    if (!message) continue
+    events.push({ offsetS: attr(child, 'timeoffset', 'timeOffset') ?? 0, message })
+  }
+  return events.sort((a, b) => a.offsetS - b.offsetS)
 }
 
 function parseSteady(el) {
@@ -100,18 +112,16 @@ export function parseZwo(xmlText) {
   const segments = []
   for (const child of workoutEl.children) {
     const tag = child.tagName
-    if (tag === 'SteadyState') {
-      segments.push(parseSteady(child))
-    } else if (tag === 'Warmup') {
-      segments.push(parseRamp(child, false))
-    } else if (tag === 'Cooldown') {
-      segments.push(parseRamp(child))
-    } else if (tag === 'IntervalsT') {
+    if (tag === 'IntervalsT') {
       segments.push(...parseIntervals(child))
-    } else if (tag === 'FreeRide') {
-      segments.push(parseFreeRide(child))
+      continue
     }
-    // TextEvent など未対応タグは無視
+    let seg = null
+    if (tag === 'SteadyState') seg = parseSteady(child)
+    else if (tag === 'Warmup' || tag === 'Cooldown') seg = parseRamp(child)
+    else if (tag === 'FreeRide') seg = parseFreeRide(child)
+    if (seg) segments.push({ ...seg, textEvents: parseTextEvents(child) })
+    // 未対応タグは無視
   }
 
   return { name, segments }

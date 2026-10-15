@@ -634,6 +634,10 @@
     .wo-val { color: #ffffff !important; }
     .wo-val.alert { color: #fbbf24 !important; }
 
+    #wo-event-msg {
+      min-height: 1.6em; font-size: 1.2rem; font-weight: 700;
+      color: #22d3ee; text-align: center; padding: 0.2rem 0;
+    }
     #wo-alert-msg {
       min-height: 1.4em; font-size: 0.8rem; font-weight: 600;
       color: #fbbf24; text-align: center; padding: 0.2rem 0;
@@ -919,6 +923,8 @@
 
         <!-- Left: HUD -->
         <div id="workout-hud-panel">
+          <div id="wo-event-msg"></div>
+          <div id="wo-alert-msg"></div>
           <div class="wo-hud-grid">
             <div class="hud-item" id="wo-hud-power-item">
               <span class="hud-value wo-val" id="wo-hud-power">--</span>
@@ -971,7 +977,6 @@
             <button class="wo-ftp-btn" id="wo-ftp-dn">▼</button>
             <button class="wo-ftp-btn" id="wo-ftp-reset" style="width:auto;padding:0 0.5rem;font-size:0.75rem;">Reset</button>
           </div>
-          <div id="wo-alert-msg"></div>
         </div>
 
         <!-- Right: Segment list -->

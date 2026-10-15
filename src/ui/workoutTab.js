@@ -499,6 +499,7 @@ export function initWorkoutTab({ getLiveData, ftmsClient, getFtpW, isDummyTraine
     }
 
     setText('wo-alert-msg', alerts.join('　'))
+    setText('wo-event-msg', state.activeMessage ?? '')
   }
 
   function buildSegmentList(container, segments, ftpW) {
