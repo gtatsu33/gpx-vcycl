@@ -1,4 +1,5 @@
 import { MovingAverage } from '../utils/smoothing.js'
+import { RIDE_KIND } from '../ride/rideKind.js'
 import { stepVelocity, DEFAULT_PHYSICS } from '../domain/physics.js'
 
 const TICK_MS              = 100
@@ -120,6 +121,7 @@ export class WorkoutController {
   getCheckpoint() {
     if (!this.#startedAt) return null
     return {
+      kind:       RIDE_KIND.WORKOUT,
       startedAt:  this.#startedAt.getTime(),
       elapsedMs:  this.#elapsedMs,
       samples:    [...this.#samples],
@@ -203,6 +205,7 @@ export class WorkoutController {
     this.#resetErg()
 
     const summary = this.#samples.length >= 2 ? {
+      kind:      RIDE_KIND.WORKOUT,
       startedAt: this.#startedAt,
       endedAt:   new Date(),
       samples:   this.#samples,

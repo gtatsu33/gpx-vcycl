@@ -12,7 +12,7 @@ import { DEFAULT_PHYSICS }           from './domain/physics.js'
 import { exchangeCode, getConnectionInfo, startAuthorization, disconnect as stravaDisconnect, verifyConnection as verifyStravaConnection }
   from './strava/auth.js'
 import { initWorkoutTab }            from './ui/workoutTab.js'
-import { buildWorkoutFit }           from './export/fitWriter.js'
+import { generateWorkoutName, FALLBACK_WORKOUT_NAME, prepareUpload } from './strava/rideUpload.js'
 import { uploadToStrava }            from './strava/upload.js'
 import { saveRide, saveDraftRide, deleteRide, markUploaded, markUploadFailed } from './storage/rides.js'
 import { Route }                     from './domain/route.js'
@@ -221,6 +221,7 @@ configureRideHistory({ getActiveDraftId: () => draftRideId })
 
 function checkpointToSummary(cp) {
   return {
+    kind:      cp.kind,
     routeId:   cp.routeId,
     routeName: cp.routeName,
     startedAt: new Date(cp.startedAt),
@@ -733,7 +734,7 @@ function showWorkoutEndModal(summary) {
     <div class="summary-row"><span>平均パワー</span><span>${avgPower} W</span></div>
     <div class="summary-row"><span>平均心拍</span><span>${avgHR > 0 ? avgHR + ' bpm' : '--'}</span></div>
   `
-  nameInput.value = summary.workoutName ? `gpx-vcycl workout : ${summary.workoutName}` : 'gpx-vcycl workout'
+  nameInput.value = generateWorkoutName(summary.workoutName)
   statusEl.textContent = ''
   statusEl.className   = 'ride-end-status'
   overlay.classList.add('open')
@@ -743,7 +744,7 @@ function showWorkoutEndModal(summary) {
   const setLoading = (on) => { uploadBtn.disabled = saveBtn.disabled = discardBtn.disabled = on }
 
   uploadBtn.onclick = async () => {
-    const name = nameInput.value.trim() || 'gpx-vcycl workout'
+    const name = nameInput.value.trim() || FALLBACK_WORKOUT_NAME
     setLoading(true)
     statusEl.textContent = '保存中...'; statusEl.className = 'ride-end-status'
     let rideId
@@ -755,8 +756,8 @@ function showWorkoutEndModal(summary) {
     }
     statusEl.textContent = 'Stravaにアップロード中...'
     try {
-      const fitData = buildWorkoutFit({ ...summary, workoutName: name })
-      const actId   = await uploadToStrava(fitData, { name, trainer: true })
+      const { fitData, meta } = prepareUpload({ ...summary, routeName: name }, { name })
+      const actId = await uploadToStrava(fitData, meta)
       await markUploaded(rideId, actId)
       statusEl.textContent = 'アップロード成功！'
       renderRideHistory()
@@ -770,7 +771,7 @@ function showWorkoutEndModal(summary) {
   }
 
   saveBtn.onclick = async () => {
-    await saveRide({ ...summary, routeName: nameInput.value.trim() || 'gpx-vcycl workout' })
+    await saveRide({ ...summary, routeName: nameInput.value.trim() || FALLBACK_WORKOUT_NAME })
     renderRideHistory()
     close()
   }

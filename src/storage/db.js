@@ -19,7 +19,7 @@ export async function initDb() {
         database.createObjectStore('routes', { keyPath: 'id', autoIncrement: true })
 
         // rides: ライド記録
-        // fields: id, routeId, startedAt, endedAt, samples
+        // fields: id, kind('route'|'workout'), routeId, routeName, startedAt, endedAt, samples, ...
         database.createObjectStore('rides', { keyPath: 'id', autoIncrement: true })
 
         // settings: キーバリュー設定

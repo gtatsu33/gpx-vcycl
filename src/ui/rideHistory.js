@@ -1,8 +1,7 @@
 import { listRides, getRide, deleteRide, finalizeDraftRide, markUploaded, markUploadFailed } from '../storage/rides.js'
-import { buildFit }       from '../export/fitWriter.js'
+import { prepareUpload, defaultUploadName } from '../strava/rideUpload.js'
 import { uploadToStrava } from '../strava/upload.js'
 import { getConnectionInfo } from '../strava/auth.js'
-import { generateRideName } from './rideEndModal.js'
 
 // 現在走行中のライドに対応するdraftRideIdを取得する関数。main.jsから
 // configureRideHistory()で注入される（未設定時は常にnull＝全draftを
@@ -83,6 +82,7 @@ function buildRideItem(ride) {
 async function finalizeDraft(ride) {
   const fullRide = await getRide(ride.id)
   await finalizeDraftRide(ride.id, {
+    kind:      fullRide.kind,
     routeId:   fullRide.routeId,
     routeName: fullRide.routeName,
     startedAt: new Date(fullRide.startedAt),
@@ -97,12 +97,11 @@ async function reupload(ride) {
   if (!info) { alert('Stravaに接続されていません。Settingsから接続してください。'); return }
 
   const fullRide = await getRide(ride.id)
-  const name = prompt('Stravaに登録する名前', generateRideName(fullRide.routeName))
-  if (name === null) return
+  const name = defaultUploadName(fullRide)
 
   try {
-    const fitData    = buildFit(fullRide)
-    const activityId = await uploadToStrava(fitData, { name })
+    const { fitData, meta } = prepareUpload(fullRide, { name })
+    const activityId = await uploadToStrava(fitData, meta)
     await markUploaded(ride.id, activityId)
     await renderRideHistory()
   } catch (err) {
@@ -114,7 +113,7 @@ async function reupload(ride) {
 
 function downloadFit(ride) {
   try {
-    const fitData = buildFit(ride)
+    const { fitData } = prepareUpload(ride, { name: ride.routeName })
     const blob    = new Blob([fitData], { type: 'application/octet-stream' })
     const url     = URL.createObjectURL(blob)
     const a       = document.createElement('a')

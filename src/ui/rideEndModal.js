@@ -1,5 +1,5 @@
 import { saveRide, finalizeDraftRide, deleteRide, markUploaded, markUploadFailed } from '../storage/rides.js'
-import { buildFit }                                 from '../export/fitWriter.js'
+import { generateRideName, prepareUpload } from '../strava/rideUpload.js'
 import { uploadToStrava }                           from '../strava/upload.js'
 import { getConnectionInfo }                        from '../strava/auth.js'
 
@@ -82,9 +82,9 @@ export class RideEndModal {
     }
 
     this.#setStatus('FIT生成中...')
-    let fitData
+    let upload
     try {
-      fitData = buildFit({ ...this.#summary, routeName: name })
+      upload = prepareUpload(this.#summary, { name })
     } catch (err) {
       await markUploadFailed(rideId, err.message)
       this.#setStatus(`FIT生成失敗: ${err.message}`, true)
@@ -94,7 +94,7 @@ export class RideEndModal {
 
     this.#setStatus('Stravaにアップロード中...')
     try {
-      const activityId = await uploadToStrava(fitData, { name })
+      const activityId = await uploadToStrava(upload.fitData, upload.meta)
       await markUploaded(rideId, activityId)
       this.#setStatus('アップロード成功！')
       setTimeout(() => this.#close(), 2000)
@@ -148,10 +148,6 @@ export class RideEndModal {
     this.#setLoading(false)
     this.#onClose?.()
   }
-}
-
-export function generateRideName(routeName) {
-  return `gpx-vcycl route : ${routeName}`
 }
 
 function avgOf(arr, fn) {

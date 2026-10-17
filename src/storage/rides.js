@@ -1,8 +1,10 @@
 import { getDb } from './db.js'
+import { assertRideKind } from '../ride/rideKind.js'
 
 function buildRideRecord(summary, isDraft) {
   const { samples, startedAt, endedAt } = summary
   return {
+    kind:             assertRideKind(summary.kind),
     routeId:          summary.routeId,
     routeName:        summary.routeName,
     startedAt,

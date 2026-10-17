@@ -1,4 +1,5 @@
 import { RideSimulator }                    from '../domain/simulator.js'
+import { RIDE_KIND }                         from './rideKind.js'
 import { calcTorque }                       from '../domain/torque.js'
 import { MovingAverage }                    from '../utils/smoothing.js'
 import { updatePhotoPanel, resetPhotoPanel } from '../mapillary/panel.js'
@@ -141,7 +142,7 @@ export class RideController {
   /**
    * ライドを停止してサマリーを返す。
    * 既に停止済みの場合は null を返す。
-   * @returns {{ routeId, routeName, startedAt, endedAt, samples } | null}
+   * @returns {{ kind, routeId, routeName, startedAt, endedAt, samples } | null}
    */
   stop() {
     if (!this.#startedAt) return null
@@ -157,6 +158,7 @@ export class RideController {
     }
 
     const summary = this.#samples.length >= 2 ? {
+      kind:      RIDE_KIND.ROUTE,
       routeId:   this.#routeId,
       routeName: this.#routeName,
       startedAt: this.#startedAt,
@@ -176,6 +178,7 @@ export class RideController {
     if (!this.#startedAt) return null
     const sim = this.#simulator.getSimState()
     return {
+      kind:      RIDE_KIND.ROUTE,
       routeId:   this.#routeId,
       routeName: this.#routeName,
       startedAt: this.#startedAt.getTime(),

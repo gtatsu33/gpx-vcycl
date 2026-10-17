@@ -296,7 +296,7 @@ Vite はクライアントに公開する環境変数に VITE_ プレフィッ�
 5-2. rides ストア（レコード形状）
 ────────────────────────────────────────
   {
-    id, routeId, routeName, startedAt, endedAt,
+    id, kind: 'route' | 'workout', routeId, routeName, startedAt, endedAt,
     totalDistanceM, totalElapsedSec,
     avgPowerW, avgCadenceRpm, avgHeartRateBpm,
     samples: [{ timestampMs, lat?, lon?, elevationM?, distanceM,
@@ -308,7 +308,14 @@ Vite はクライアントに公開する環境変数に VITE_ プレフィッ�
   }
   （lat/lon/elevationM/gradientPercentはルートモードのみ。ワークアウト
     記録には含まれない。isDraftは走行中の自動保存で作成され終了操作が
-    まだ行われていない記録の場合true。DBスキーマ上の新規ストア追加は
+    まだ行われていない記録の場合true。kindは記録の種別（ride/rideKind.js
+    のRIDE_KIND）で、Strava送信条件・FIT形式・登録名の振り分けは必ず
+    これで行う（他フィールドからの推定はしない）。RideController／
+    WorkoutControllerのstop()サマリーとgetCheckpoint()がkindを持ち、
+    buildRideRecord()がassertRideKind()で検証する（未設定・不正値は
+    例外）。kind導入前に保存された記録はkindを持たず、履歴からの
+    アップロード等で例外になる（ブラウザ側のデータ消去で対処）。
+    DBスキーマ上の新規ストア追加は
     不要（IndexedDBはフィールド単位でスキーマレス）。9-4節参照）
 
   API（storage/rides.js）:
@@ -677,7 +684,7 @@ constants.js に集約する。
       （samples.length>=2の場合のみ非null）。FTMSはisControllableなら
       reset()を試みる（エラーは握りつぶしログのみ）。
     get isRunning / get isPaused
-    getCheckpoint() → null|{routeId, routeName, startedAt(epoch ms),
+    getCheckpoint() → null|{kind:'route', routeId, routeName, startedAt(epoch ms),
       samples, simState}
     restoreFrom({startedAt, samples, simState}) →
       チェックポイントから復元。#pausedをtrueにしてintervalを開始
@@ -1281,11 +1288,25 @@ constants.js に集約する。
     アップロード/FIT/削除ボタン（ride.isDraft時はアップロード/FITの
     代わりに「記録を確定」ボタン、削除ボタンのラベルは「破棄」。
     isActiveDraft時は確定・削除ボタンいずれも非表示）。
-    reupload()はStrava未接続ならalert、接続済みなら prompt() で
-    アップロード名を編集可能にする（初期値はRideEndModalと同じ
-    generateRideName(routeName)、RideEndModalからexportして共有。
-    キャンセル時は何もしない）。その後FIT再生成してuploadToStrava→
-    markUploaded/Failed。
+    reupload()はStrava未接続ならalert、接続済みなら確認ダイアログ
+    なしで、strava/rideUpload.jsのdefaultUploadName(ride)で登録名を、
+    ride.kindで種別を決める。その後prepareUpload()でFIT生成と
+    送信オプションを得てuploadToStrava→markUploaded/Failed。
+    ライド終了時（RideEndModal／main.jsのワークアウト終了モーダル）と
+    同じprepareUpload()を通すため、条件は常に一致する。FITダウンロード
+    （downloadFit）も同様に種別に応じたFITを生成する。
+
+  strava/rideUpload.js（ライド終了時と履歴再アップロードの共通定義）
+    （RIDE_KIND = { ROUTE, WORKOUT }とassertRideKind()はride/rideKind.js）
+    generateRideName(routeName) → 'gpx-vcycl route : ' + routeName
+    generateWorkoutName(workoutName) → 'gpx-vcycl workout[ : name]'
+    FALLBACK_WORKOUT_NAME → 'gpx-vcycl workout'
+    defaultUploadName(ride) → ルートはgenerateRideName、ワークアウトは
+      保存済みrouteName（終了時に確定した登録名）
+    prepareUpload(ride, {name}) → {fitData, meta}   （種別はride.kind）
+      ROUTE:   buildFit,        meta={name, trainer:false}
+      WORKOUT: buildWorkoutFit, meta={name, trainer:true}
+      metaはそのままuploadToStrava(fitData, meta)へ渡す。
     finalizeDraft(ride) → 履歴タブから、走行を再開せずに下書きを確定
     記録へ変える経路（isActiveDraftの場合はボタン自体が出ないため
     呼ばれない）。getRide(ride.id)でsamples等を取得しsummary形状に
